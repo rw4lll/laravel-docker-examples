@@ -119,7 +119,7 @@ docker compose -f compose.dev.yaml up -d
 docker compose -f compose.dev.yaml exec workspace bash
 composer install
 npm install
-npm run dev
+npm run dev -- --host
 ```
 
 4. Run Migrations:
