@@ -8,7 +8,7 @@ services:
       - ./docker/development/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     ports:
       # Map port 80 inside the container to the port specified by 'NGINX_PORT' on the host machine
-      - "80:80"
+      - "8081:80"
     environment:
       - NGINX_HOST=localhost
     networks:
@@ -42,8 +42,10 @@ services:
     networks:
       - laravel-development
     depends_on:
-      postgres:
+      mysql:
         condition: service_started  # Wait for postgres to start
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   workspace:
    # For the workspace service, we will also create a custom image to install and setup all the necessary stuff.
@@ -70,14 +72,16 @@ services:
     networks:
       - laravel-development
 
-  postgres:
-    image: postgres:16
+  mysql:
+    image: mysql:8.0
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "${POSTGRES_PORT:-3306}:3306"
     environment:
-      - POSTGRES_DB=app
-      - POSTGRES_USER=laravel
-      - POSTGRES_PASSWORD=secret
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      SERVICE_TAGS: dev
+      SERVICE_NAME: mysql
     volumes:
       - postgres-data-development:/var/lib/postgresql/data
     networks:
