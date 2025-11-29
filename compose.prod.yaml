@@ -50,10 +50,11 @@ services:
     # This prevents the application from trying to connect to the database before it's ready.
     depends_on:
       postgres:
+      #mysql:
         condition: service_healthy
 
   postgres:
-    image: postgres:16
+    image: postgres:18
     restart: unless-stopped
     user: postgres
     ports:
@@ -63,7 +64,7 @@ services:
       - POSTGRES_USER=${POSTGRES_USERNAME:-laravel}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-secret}
     volumes:
-      - postgres-data-production:/var/lib/postgresql/data
+      - postgres-data-production:/var/lib/postgresql
     networks:
       - laravel-production
     # Health check for PostgreSQL
@@ -77,6 +78,27 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # mysql:
+  #   image: mysql/mysql-server:8.0
+  #   restart: unless-stopped
+  #   ports:
+  #     # The default MySQL port is 3306
+  #     - "${DB_PORT:-3306}:3306"
+  #   environment:
+  #     MYSQL_DATABASE: ${DB_DATABASE:-app}
+  #     MYSQL_USER: ${DB_USERNAME:-laravel}
+  #     MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
+  #     MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-secret} # Must be set for MySQL 8
+  #   volumes:
+  #     - mysql-data-production:/var/lib/mysql
+  #   networks:
+  #     - laravel-production
+  #   healthcheck:
+  #     test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
 
   redis:
     image: redis:alpine
@@ -104,5 +126,6 @@ networks:
 
 volumes:
   postgres-data-production:
+  # mysql-data-production:
   laravel-storage-production:
   laravel-public-assets:
