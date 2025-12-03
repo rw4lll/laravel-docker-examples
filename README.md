@@ -97,6 +97,8 @@ git clone https://github.com/rw4lll/laravel-docker-examples.git
 cd laravel-docker-examples
 ```
 
+Before continuing, these configurations are set up to use PostgreSQL as the database. If you prefer to use MySQL (or another database), now is the time to update the database settings in both `.env.example` and `compose.dev.yaml`. Comment out the PostgreSQL configuration and uncomment the MySQL one, then proceed.
+
 ### Setting Up the Development Environment
 
 1. Run all these combined commands at once:
