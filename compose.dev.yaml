@@ -43,7 +43,8 @@ services:
       - laravel-development
     depends_on:
       postgres:
-        condition: service_started  # Wait for postgres to start
+      # mysql:
+        condition: service_healthy  # Wait for postgres to start
 
   workspace:
    # For the workspace service, we will also create a custom image to install and setup all the necessary stuff.
@@ -71,7 +72,7 @@ services:
       - laravel-development
 
   postgres:
-    image: postgres:16
+    image: postgres:18
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     environment:
@@ -79,9 +80,34 @@ services:
       - POSTGRES_USER=laravel
       - POSTGRES_PASSWORD=secret
     volumes:
-      - postgres-data-development:/var/lib/postgresql/data
+      - postgres-data-development:/var/lib/postgresql
     networks:
       - laravel-development
+    healthcheck:
+      test: [ "CMD", "pg_isready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # mysql:
+  #   image: mysql/mysql-server:8.0
+  #   restart: unless-stopped
+  #   ports:
+  #     - "${DB_PORT:-3306}:3306"
+  #   environment:
+  #     MYSQL_DATABASE: ${DB_DATABASE:-app}
+  #     MYSQL_USER: ${DB_USERNAME:-laravel}
+  #     MYSQL_PASSWORD: ${DB_PASSWORD:-secret}
+  #     MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-secret} # Must be set for MySQL 8
+  #   volumes:
+  #     - mysql-data-development:/var/lib/mysql
+  #   networks:
+  #     - laravel-development
+  #   healthcheck:
+  #     test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
 
   redis:
     image: redis:alpine
@@ -93,3 +119,4 @@ networks:
 
 volumes:
   postgres-data-development:
+  # mysql-data-development:
