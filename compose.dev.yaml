@@ -64,6 +64,12 @@ services:
       - '${VITE_PORT:-5173}:5173'
     tty: true  # Enables an interactive terminal
     stdin_open: true  # Keeps standard input open for 'docker exec'
+    command: >
+      bash -c "
+        . /home/www/.nvm/nvm.sh &&
+        if [ -d node_modules ]; then npm run dev & fi
+        exec bash
+      "
     env_file:
       - .env
     volumes:
