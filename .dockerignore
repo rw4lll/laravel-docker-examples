@@ -45,3 +45,10 @@ README.md
 tests/
 phpunit.xml
 phpunit.xml.dist
+
+# Keep local runtime state out of the image
+# The negation keeps the skeleton.
+bootstrap/cache/*.php
+storage/framework/*
+storage/logs/*
+!storage/**/.gitignore
