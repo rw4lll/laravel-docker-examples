@@ -5,7 +5,7 @@ FROM php:8.5-cli
 # Set environment variables for user and group ID
 ARG UID=1000
 ARG GID=1000
-ARG NODE_VERSION=22.0.0
+ARG NODE_VERSION=24
 
 # Install system dependencies and build libraries
 RUN apt-get update && apt-get install -y --no-install-recommends \

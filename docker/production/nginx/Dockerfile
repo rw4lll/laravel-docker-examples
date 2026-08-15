@@ -1,12 +1,6 @@
 # Stage 1: Build assets
-FROM debian AS builder
-
-# Install Node.js and build tools
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    nodejs \
-    npm \
-    && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+# Same Node major as the workspace container, so dev and prod build assets identically.
+FROM node:24-alpine AS builder
 
 # Set working directory
 WORKDIR /var/www
@@ -15,7 +9,8 @@ WORKDIR /var/www
 COPY . /var/www
 
 # Install Node.js dependencies and build assets
-RUN npm install && npm run build
+# `npm ci` installs exactly what package-lock.json specifies
+RUN npm ci && npm run build
 
 # Stage 2: Nginx production image
 FROM nginx:alpine
