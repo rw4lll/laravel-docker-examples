@@ -167,7 +167,7 @@ fi
 ARG UID=1000
 ARG GID=1000
 
-# Create a new user with the specified UID and GID, reusing an existing group if GID exists
+# Create a new user with the specified UID/GID and point the php-fpm pool at it.
 RUN if getent group ${GID}; then \
       group_name=$(getent group ${GID} | cut -d: -f1); \
       useradd -m -u ${UID} -g ${GID} -s /bin/bash www; \
@@ -175,12 +175,9 @@ RUN if getent group ${GID}; then \
       groupadd -g ${GID} www && \
       useradd -m -u ${UID} -g www -s /bin/bash www; \
       group_name=www; \
-    fi
-
-# Dynamically update php-fpm to use the new user and group
-RUN sed -i "s/user = www-data/user = www/g" /usr/local/etc/php-fpm.d/www.conf && \
-    sed -i "s/group = www-data/group = $group_name/g" /usr/local/etc/php-fpm.d/www.conf
-
+    fi && \
+    sed -i "s/user = www-data/user = www/g" /usr/local/etc/php-fpm.d/www.conf && \
+    sed -i "s/group = www-data/group = ${group_name}/g" /usr/local/etc/php-fpm.d/www.conf
 
 # Set the working directory
 WORKDIR /var/www
@@ -190,7 +187,7 @@ COPY ./docker/development/php-fpm/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Switch back to the non-privileged user to run the application
-USER www-data
+USER www
 
 # Change the default command to run the entrypoint script
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
