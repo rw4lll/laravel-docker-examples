@@ -64,13 +64,21 @@ RUN if getent group ${GID}; then \
 # Switch to the non-root user to install NVM and Node.js
 USER www
 
+ENV NVM_DIR=/home/www/.nvm
+
 # Install NVM (Node Version Manager) as the www user
-RUN export NVM_DIR="$HOME/.nvm" && \
-    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash && \
+# The 'current' symlink gives the installed version a fixed path, since
+# NODE_VERSION is a major and nvm resolves it to a patch release at build time.
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.6/install.sh | bash && \
     [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && \
     nvm install ${NODE_VERSION} && \
     nvm alias default ${NODE_VERSION} && \
-    nvm use default
+    nvm use default && \
+    ln -s "$NVM_DIR/versions/node/$(nvm version default)" "$NVM_DIR/versions/node/current"
+
+# Put node and npm on PATH for every shell, including non-interactive ones, so
+# `docker compose exec workspace npm ...` works without opening a login shell.
+ENV PATH=$NVM_DIR/versions/node/current/bin:$PATH
 
 # Ensure NVM is available for all future shells
 RUN echo 'export NVM_DIR="$HOME/.nvm"' >> /home/www/.bashrc && \
