@@ -51,4 +51,5 @@ phpunit.xml.dist
 bootstrap/cache/*.php
 storage/framework/*
 storage/logs/*
+public/build
 !storage/**/.gitignore

@@ -3,7 +3,7 @@ FROM php:8.5-fpm AS builder
 
 # Install system dependencies and PHP extensions required for Laravel + MySQL/PostgreSQL support
 # Some dependencies are required for PHP extensions only in the build stage
-# We don't need to install Node.js or build assets, as it was done in the Nginx image
+# Node.js is not needed here: the frontend is built in the `assets` stage below
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     unzip \
@@ -52,8 +52,21 @@ RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local
     && composer install --no-dev --optimize-autoloader --no-interaction --no-progress --prefer-dist
 
 
-# Stage 2: Production environment
-FROM php:8.5-fpm AS production
+# Stage 2: Frontend assets
+# Built once here so nginx (which serves the files) and PHP (which reads
+# manifest.json to render their URLs) can never disagree about which build.
+# API-only project? Drop this stage and the two `COPY --from=assets` lines below.
+FROM node:24-alpine AS assets
+
+WORKDIR /var/www
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+
+# Stage 3: Shared PHP runtime
+FROM php:8.5-fpm AS runtime
 
 # Install only runtime libraries needed in production
 # libfcgi-bin and procps are required for the php-fpm-healthcheck script
@@ -116,8 +129,17 @@ EXPOSE 9000
 CMD ["php-fpm"]
 
 
-# Stage 3: Development image
-FROM production AS development
+# Stage 4: Production image
+FROM runtime AS production
+
+# API-only: drop this line — the stage then adds nothing, so build `runtime` instead
+COPY --from=assets --chown=www-data:www-data /var/www/public/build /var/www/public/build
+
+
+# Stage 5: Development image
+# Built from `runtime`, not `production`, so a dev build never runs the Node
+# stage - the dev stack bind-mounts the project and runs Vite in `workspace`.
+FROM runtime AS development
 
 # Use ARG to define environment variables passed from the Docker build command or Docker Compose.
 ARG XDEBUG_ENABLED=true
@@ -176,3 +198,17 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # Expose port 9000 and start php-fpm server
 EXPOSE 9000
 CMD ["php-fpm"]
+
+
+# Stage 6: Production web server
+FROM nginx:alpine AS web
+
+COPY ./docker/production/nginx/nginx.conf /etc/nginx/nginx.conf
+COPY ./public /var/www/public
+# API-only: drop this line
+COPY --from=assets /var/www/public/build /var/www/public/build
+
+WORKDIR /var/www/public
+
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]

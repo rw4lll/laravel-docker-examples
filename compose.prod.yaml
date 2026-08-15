@@ -2,7 +2,8 @@ services:
   web:
     build:
       context: .
-      dockerfile: ./docker/production/nginx/Dockerfile
+      dockerfile: ./docker/common/Dockerfile
+      target: web
     restart: unless-stopped # Automatically restart unless the service is explicitly stopped
     volumes:
       # Mount the 'laravel-storage-production' volume to '/var/www/storage' inside the container.
@@ -12,7 +13,6 @@ services:
       # The 'php-fpm' service mounts the same volume without ':ro' to allow write operations.
       # -----------------------------------------------------------
       - laravel-storage-production:/var/www/storage:ro
-      - laravel-public-assets:/var/www/public/build:ro
     networks:
       - laravel-production
     ports:
@@ -30,11 +30,10 @@ services:
     # For the php-fpm service, we will create a custom image to install the necessary PHP extensions and setup proper permissions.
     build:
       context: .
-      dockerfile: ./docker/common/php-fpm/Dockerfile
+      dockerfile: ./docker/common/Dockerfile
       target: production
     restart: unless-stopped
     volumes:
-      - laravel-public-assets:/var/www/public/build  # Mount built public assets to ensure the manifest.json and hashed files match between Nginx and PHP-FPM
       - laravel-storage-production:/var/www/storage  # Mount the storage volume
     env_file:
       - .env
@@ -105,4 +104,3 @@ networks:
 volumes:
   postgres-data-production:
   laravel-storage-production:
-  laravel-public-assets:
