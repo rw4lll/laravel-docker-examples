@@ -1,3 +1,5 @@
+name: laravel-docker-examples-prod
+
 services:
   web:
     build:
@@ -25,6 +27,15 @@ services:
     depends_on:
       php-fpm:
         condition: service_healthy  # Wait for php-fpm health check
+    # Checks the application through nginx via Laravel's /up endpoint, which
+    # covers more than php-fpm's own check of the FPM pool.
+    healthcheck:
+      # Addressed as 127.0.0.1: nginx listens on IPv4 only inside the container.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/up"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   php-fpm:
     # For the php-fpm service, we will create a custom image to install the necessary PHP extensions and setup proper permissions.

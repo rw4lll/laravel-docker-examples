@@ -1,6 +1,8 @@
+name: laravel-docker-examples-dev
+
 services:
   web:
-    image: nginx:latest # Using the default Nginx image with custom configuration.
+    image: nginx:alpine # Same image as production, with a custom configuration.
     volumes:
       # Mount the application code for live updates
       - ./:/var/www
@@ -16,6 +18,14 @@ services:
     depends_on:
       php-fpm:
         condition: service_started  # Wait for php-fpm to start
+    # Checks the application through nginx via Laravel's /up endpoint.
+    healthcheck:
+      # Addressed as 127.0.0.1: nginx listens on IPv4 only inside the container.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/up"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   php-fpm:
     # For the php-fpm service, we will create a custom image to install the necessary PHP extensions and setup proper permissions.
@@ -43,7 +53,7 @@ services:
       - laravel-development
     depends_on:
       postgres:
-        condition: service_started  # Wait for postgres to start
+        condition: service_healthy  # Wait until postgres accepts connections
 
   workspace:
    # For the workspace service, we will also create a custom image to install and setup all the necessary stuff.
@@ -82,6 +92,11 @@ services:
       - postgres-data-development:/var/lib/postgresql/data
     networks:
       - laravel-development
+    healthcheck:
+      test: ["CMD", "pg_isready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:alpine
