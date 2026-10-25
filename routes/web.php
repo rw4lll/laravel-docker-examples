@@ -8,11 +8,14 @@ Route::get('/', function () {
     return view('welcome');
 });
 
-Route::get('/info', function () {
-    Log::info('Phpinfo page visited');
+// phpinfo() prints every environment variable, including APP_KEY and DB_PASSWORD
+if (app()->isLocal()) {
+    Route::get('/info', function () {
+        Log::info('Phpinfo page visited');
 
-    return phpinfo();
-});
+        return phpinfo();
+    });
+}
 
 Route::get('/health', function () {
     $status = [];

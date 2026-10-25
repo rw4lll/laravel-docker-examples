@@ -64,6 +64,9 @@ services:
     environment:
       # Write logs to stderr, so 'docker compose logs php-fpm' shows them.
       - LOG_CHANNEL=stderr
+      # The shared .env is set up for development
+      - APP_ENV=production
+      - APP_DEBUG=false
     networks:
       - laravel-production
     healthcheck:

@@ -70,6 +70,9 @@ services:
         XDEBUG_LOG_LEVEL: 0
     ports:
       - '${VITE_PORT:-5173}:5173'
+    # Vite runs here through 'exec', so stopping the stack kills it before it
+    # can remove public/hot, and pages then load assets from a dead dev server
+    command: ["sh", "-c", "rm -f public/hot && exec bash"]
     tty: true  # Enables an interactive terminal
     stdin_open: true  # Keeps standard input open for 'docker exec'
     volumes:
