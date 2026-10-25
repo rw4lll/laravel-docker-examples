@@ -16,11 +16,8 @@
 **/docker-compose*
 **/compose.y*ml
 **/compose.*.y*ml
-!**/composer.json
-!**/composer.lock
 **/Dockerfile*
 **/node_modules
-**/npm-debug.log
 **/vendor
 **/.DS_Store
 .editorconfig
@@ -49,9 +46,6 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 
-# Ignore development-related files and directories
-# For development environment, we will use mount bind to mount the source code to the container
-# So we don't need to copy the source code to the container for development
 tests/
 phpunit.xml
 phpunit.xml.dist
