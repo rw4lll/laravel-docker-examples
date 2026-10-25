@@ -40,6 +40,7 @@ LICENSE
 .nova
 .zed
 auth.json
+database/*.sqlite*
 public/fonts-manifest.dev.json
 storage/*.key
 storage/pail
@@ -60,8 +61,7 @@ phpunit.xml.dist
 bootstrap/cache/*.php
 storage/framework/*
 storage/logs/*
-storage/app/private/*
-storage/app/public/*
+storage/app/*
 public/build
 public/hot
 public/storage
