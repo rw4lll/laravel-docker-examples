@@ -1,18 +1,25 @@
+name: laravel-docker-examples-prod
+
 services:
   web:
     build:
       context: .
-      dockerfile: ./docker/production/nginx/Dockerfile
+      dockerfile: ./docker/common/Dockerfile
+      target: web
     restart: unless-stopped # Automatically restart unless the service is explicitly stopped
     volumes:
-      # Mount the 'laravel-storage-production' volume to '/var/www/storage' inside the container.
+      # Files that Nginx serves at '/storage', through the 'public/storage' link.
       # -----------------------------------------------------------
-      # This volume stores persistent data like uploaded files and cache.
-      # The ':ro' option mounts it as read-only in the 'web' service because Nginx only needs to read these files.
-      # The 'php-fpm' service mounts the same volume without ':ro' to allow write operations.
+      # 'subpath' mounts only 'app/public', so private files are not in this
+      # container. Read-only: only the 'php-fpm' service writes files.
+      # API-only project? Remove this mount.
       # -----------------------------------------------------------
-      - laravel-storage-production:/var/www/storage:ro
-      - laravel-public-assets:/var/www/public/build:ro
+      - type: volume
+        source: laravel-storage-production
+        target: /var/www/storage/app/public
+        read_only: true
+        volume:
+          subpath: public
     networks:
       - laravel-production
     ports:
@@ -25,19 +32,41 @@ services:
     depends_on:
       php-fpm:
         condition: service_healthy  # Wait for php-fpm health check
+    # Checks the application through nginx via Laravel's /up endpoint, which
+    # covers more than php-fpm's own check of the FPM pool.
+    healthcheck:
+      # Addressed as 127.0.0.1: nginx listens on IPv4 only inside the container.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/up"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   php-fpm:
     # For the php-fpm service, we will create a custom image to install the necessary PHP extensions and setup proper permissions.
     build:
       context: .
-      dockerfile: ./docker/common/php-fpm/Dockerfile
+      dockerfile: ./docker/common/Dockerfile
       target: production
     restart: unless-stopped
     volumes:
-      - laravel-public-assets:/var/www/public/build  # Mount built public assets to ensure the manifest.json and hashed files match between Nginx and PHP-FPM
-      - laravel-storage-production:/var/www/storage  # Mount the storage volume
+      # Keep the user files. This is the only part of 'storage' with data.
+      # -----------------------------------------------------------
+      # 'storage/framework' holds temporary files and 'storage/logs' is empty,
+      # because logs go to stderr, so both can stay inside the container.
+      # Mount 'storage/app' only: a mount over the whole 'storage' directory
+      # hides the folders from the image, and Laravel then fails to start.
+      # The volume can start empty - Laravel creates what it needs.
+      # -----------------------------------------------------------
+      - laravel-storage-production:/var/www/storage/app
     env_file:
       - .env
+    environment:
+      # Write logs to stderr, so 'docker compose logs php-fpm' shows them.
+      - LOG_CHANNEL=stderr
+      # The shared .env is set up for development
+      - APP_ENV=production
+      - APP_DEBUG=false
     networks:
       - laravel-production
     healthcheck:
@@ -51,19 +80,25 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
 
   postgres:
-    image: postgres:16
+    image: postgres:18
     restart: unless-stopped
     user: postgres
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Published ports bypass host firewalls such as ufw, so keep it on localhost
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     environment:
-      - POSTGRES_DB=${POSTGRES_DATABASE:-app}
-      - POSTGRES_USER=${POSTGRES_USERNAME:-laravel}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-secret}
+      # The same credentials Laravel reads from .env
+      - POSTGRES_DB=${DB_DATABASE:-app}
+      - POSTGRES_USER=${DB_USERNAME:-laravel}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-secret}
     volumes:
-      - postgres-data-production:/var/lib/postgresql/data
+      # Postgres 18+ keeps its data in a versioned subdirectory (18/docker),
+      # so the volume is mounted one level up from the old .../data path
+      - postgres-data-production:/var/lib/postgresql
     networks:
       - laravel-production
     # Health check for PostgreSQL
@@ -73,13 +108,13 @@ services:
     # This prevents dependent services from starting before the database is ready.
     # -----------------------------------------------------------
     healthcheck:
-      test: [ "CMD", "pg_isready" ]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   redis:
-    image: redis:alpine
+    image: redis:8-alpine
     restart: unless-stopped  # Automatically restart unless the service is explicitly stopped
     networks:
       - laravel-production
@@ -105,4 +140,3 @@ networks:
 volumes:
   postgres-data-production:
   laravel-storage-production:
-  laravel-public-assets:

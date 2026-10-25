@@ -1,6 +1,8 @@
+name: laravel-docker-examples-dev
+
 services:
   web:
-    image: nginx:latest # Using the default Nginx image with custom configuration.
+    image: nginx:1.30-alpine # Same image as production, with a custom configuration.
     volumes:
       # Mount the application code for live updates
       - ./:/var/www
@@ -8,7 +10,7 @@ services:
       - ./docker/development/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     ports:
       # Map port 80 inside the container to the port specified by 'NGINX_PORT' on the host machine
-      - "80:80"
+      - "${NGINX_PORT:-80}:80"
     environment:
       - NGINX_HOST=localhost
     networks:
@@ -16,26 +18,34 @@ services:
     depends_on:
       php-fpm:
         condition: service_started  # Wait for php-fpm to start
+    # Checks the application through nginx via Laravel's /up endpoint.
+    healthcheck:
+      # Addressed as 127.0.0.1: nginx listens on IPv4 only inside the container.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/up"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   php-fpm:
     # For the php-fpm service, we will create a custom image to install the necessary PHP extensions and setup proper permissions.
     build:
       context: .
-      dockerfile: ./docker/common/php-fpm/Dockerfile
+      dockerfile: ./docker/common/Dockerfile
       target: development
       args:
         UID: ${UID:-1000}
         GID: ${GID:-1000}
         XDEBUG_ENABLED: ${XDEBUG_ENABLED:-true}
-        XDEBUG_MODE: develop,coverage,debug,profile
+        XDEBUG_MODE: develop,debug
         XDEBUG_HOST: ${XDEBUG_HOST:-host.docker.internal}
         XDEBUG_IDE_KEY: ${XDEBUG_IDE_KEY:-DOCKER}
         XDEBUG_LOG: /dev/stdout
         XDEBUG_LOG_LEVEL: 0
-    env_file:
-      # Load the environment variables from the Laravel application
-      - .env
     user: "${UID:-1000}:${GID:-1000}"
+    # Docker Desktop resolves this name by itself; on Linux, Xdebug needs the mapping
+    extra_hosts:
+      - host.docker.internal:host-gateway
     volumes:
       # Mount the application code for live updates
       - ./:/var/www
@@ -43,7 +53,9 @@ services:
       - laravel-development
     depends_on:
       postgres:
-        condition: service_started  # Wait for postgres to start
+        condition: service_healthy  # Wait until postgres accepts connections
+      redis:
+        condition: service_healthy
 
   workspace:
    # For the workspace service, we will also create a custom image to install and setup all the necessary stuff.
@@ -54,39 +66,55 @@ services:
         UID: ${UID:-1000}
         GID: ${GID:-1000}
         XDEBUG_ENABLED: ${XDEBUG_ENABLED:-true}
-        XDEBUG_MODE: develop,coverage,debug,profile
+        XDEBUG_MODE: develop,debug
         XDEBUG_HOST: ${XDEBUG_HOST:-host.docker.internal}
         XDEBUG_IDE_KEY: ${XDEBUG_IDE_KEY:-DOCKER}
         XDEBUG_LOG: /dev/stdout
         XDEBUG_LOG_LEVEL: 0
+    # Docker Desktop resolves this name by itself; on Linux, Xdebug needs the mapping
+    extra_hosts:
+      - host.docker.internal:host-gateway
     ports:
       - '${VITE_PORT:-5173}:5173'
+    # Vite runs here through 'exec', so stopping the stack kills it before it
+    # can remove public/hot, and pages then load assets from a dead dev server
+    command: ["sh", "-c", "rm -f public/hot && exec bash"]
     tty: true  # Enables an interactive terminal
     stdin_open: true  # Keeps standard input open for 'docker exec'
-    env_file:
-      - .env
     volumes:
       - ./:/var/www
     networks:
       - laravel-development
 
   postgres:
-    image: postgres:16
+    image: postgres:18
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     environment:
       - POSTGRES_DB=app
       - POSTGRES_USER=laravel
       - POSTGRES_PASSWORD=secret
     volumes:
-      - postgres-data-development:/var/lib/postgresql/data
+      # Postgres 18+ keeps its data in a versioned subdirectory (18/docker),
+      # so the volume is mounted one level up from the old .../data path
+      - postgres-data-development:/var/lib/postgresql
     networks:
       - laravel-development
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
-    image: redis:alpine
+    image: redis:8-alpine
     networks:
       - laravel-development
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
 networks:
   laravel-development:

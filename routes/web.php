@@ -4,13 +4,18 @@ use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     Log::info('Welcome page visited');
+
     return view('welcome');
 });
 
-Route::get('/info', function () {
-    Log::info('Phpinfo page visited');
-    return phpinfo();
-});
+// phpinfo() prints every environment variable, including APP_KEY and DB_PASSWORD
+if (app()->isLocal()) {
+    Route::get('/info', function () {
+        Log::info('Phpinfo page visited');
+
+        return phpinfo();
+    });
+}
 
 Route::get('/health', function () {
     $status = [];
@@ -21,7 +26,7 @@ Route::get('/health', function () {
         // Optionally, run a simple query
         DB::select('SELECT 1');
         $status['database'] = 'OK';
-    } catch (\Exception $e) {
+    } catch (Exception $e) {
         $status['database'] = 'Error';
     }
 
@@ -34,7 +39,7 @@ Route::get('/health', function () {
         } else {
             $status['redis'] = 'Error';
         }
-    } catch (\Exception $e) {
+    } catch (Exception $e) {
         $status['redis'] = 'Error';
     }
 
@@ -50,7 +55,7 @@ Route::get('/health', function () {
         } else {
             $status['storage'] = 'Error';
         }
-    } catch (\Exception $e) {
+    } catch (Exception $e) {
         $status['storage'] = 'Error';
     }
 
