@@ -1,5 +1,7 @@
 # Stage 1: Build environment and Composer dependencies
-FROM php:8.5-fpm AS builder
+# The Debian suffix prevents a silent switch to the next Debian release, which
+# renames the library packages installed with apt-get below
+FROM php:8.5-fpm-trixie AS builder
 
 # Install system dependencies and PHP extensions required for Laravel + MySQL/PostgreSQL support
 # Some dependencies are required for PHP extensions only in the build stage
@@ -22,10 +24,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zip \
     bcmath \
     soap \
-    && pecl install redis \
+    && pecl install redis-6.3.0 \
     && docker-php-ext-enable redis \
     && apt-get autoremove -y && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
+COPY --from=composer/composer:2-bin /composer /usr/local/bin/composer
 
 # Set the working directory inside the container
 WORKDIR /var/www
@@ -47,16 +50,15 @@ WORKDIR /var/www
 # -----------------------------------------------------------
 COPY . /var/www
 
-# Install Composer and dependencies
-RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer \
-    && composer install --no-dev --optimize-autoloader --no-interaction --no-progress --prefer-dist
+# Install Composer dependencies
+RUN composer install --no-dev --optimize-autoloader --no-interaction --no-progress --prefer-dist
 
 
 # Stage 2: Frontend assets
 # Built once here so nginx (which serves the files) and PHP (which reads
 # manifest.json to render their URLs) can never disagree about which build.
 # API-only project? Drop this stage and the two `COPY --from=assets` lines below.
-FROM node:24-alpine AS assets
+FROM node:26-alpine AS assets
 
 WORKDIR /var/www
 COPY package.json package-lock.json ./
@@ -66,7 +68,7 @@ RUN npm run build
 
 
 # Stage 3: Shared PHP runtime
-FROM php:8.5-fpm AS runtime
+FROM php:8.5-fpm-trixie AS runtime
 
 # Install only runtime libraries needed in production
 # libfcgi-bin and procps are required for the php-fpm-healthcheck script
@@ -79,9 +81,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get autoremove -y && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Download and install php-fpm health check script
-RUN curl -o /usr/local/bin/php-fpm-healthcheck \
-    https://raw.githubusercontent.com/renatomefi/php-fpm-healthcheck/master/php-fpm-healthcheck \
-    && chmod +x /usr/local/bin/php-fpm-healthcheck
+ADD --chmod=755 --checksum=sha256:53bc616c4a30f029b98bff48fdeb0c4da252cb11e4f86656a8222a67dc4e5009 \
+    https://raw.githubusercontent.com/renatomefi/php-fpm-healthcheck/v0.6.0/php-fpm-healthcheck \
+    /usr/local/bin/php-fpm-healthcheck
 
 # Copy the initialization script
 COPY ./docker/production/php-fpm/entrypoint.sh /usr/local/bin/entrypoint.sh
@@ -157,7 +159,7 @@ USER root
 
 # Configure Xdebug if enabled
 RUN if [ "${XDEBUG_ENABLED}" = "true" ]; then \
-    pecl install xdebug && \
+    pecl install xdebug-3.5.3 && \
     docker-php-ext-enable xdebug && \
     echo "xdebug.mode=${XDEBUG_MODE}" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini && \
     echo "xdebug.idekey=${XDEBUG_IDE_KEY}" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini && \
@@ -202,7 +204,7 @@ CMD ["php-fpm"]
 
 
 # Stage 6: Production web server
-FROM nginx:alpine AS web
+FROM nginx:1.30-alpine AS web
 
 COPY ./docker/production/nginx/nginx.conf /etc/nginx/nginx.conf
 COPY ./public /var/www/public

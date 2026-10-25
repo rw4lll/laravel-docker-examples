@@ -2,7 +2,7 @@ name: laravel-docker-examples-dev
 
 services:
   web:
-    image: nginx:alpine # Same image as production, with a custom configuration.
+    image: nginx:1.30-alpine # Same image as production, with a custom configuration.
     volumes:
       # Mount the application code for live updates
       - ./:/var/www
@@ -96,7 +96,7 @@ services:
       retries: 5
 
   redis:
-    image: redis:alpine
+    image: redis:8-alpine
     networks:
       - laravel-development
     healthcheck:

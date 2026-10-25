@@ -194,7 +194,7 @@ The production image can be deployed to any Docker-compatible hosting environmen
 
 - **PHP**: Version **8.5 FPM** is used for optimal performance in both development and production environments.
 - **Fonts**: Laravel 13's Vite config self-hosts its web font, downloading it from `fonts.bunny.net` **at build time**. The asset build therefore needs network access to that host; remove the `fonts` entry in `vite.config.js` if you build in an isolated environment.
-- **Node.js**: Version **24.x** (current LTS) is used for building frontend assets with Vite — via NVM in the `workspace` container, and in the Nginx image's build stage for production.
+- **Node.js**: Version **26.x** (LTS) is used for building frontend assets with Vite — via NVM in the `workspace` container, and in the `assets` build stage for production.
 - **PostgreSQL**: Version **16** is used as the database in the examples, but you can adjust the configuration to use MySQL if preferred.
 - **Redis**: Used for caching and session management, integrated into both development and production environments.
 - **Nginx**: Used as the web server to serve the Laravel application and handle HTTP requests.
@@ -203,6 +203,17 @@ The production image can be deployed to any Docker-compatible hosting environmen
 - **Storage**: Only `storage/app` is persisted in a volume — `storage/framework` is per-build scratch space and logs go to `stderr` (`docker compose logs php-fpm`) rather than to a file inside the container. Mounting the whole `storage/` directory instead would hide the skeleton shipped in the image and break the application with `Please provide a valid cache path.`
 - **Public Files**: The `public/storage` symlink that `php artisan storage:link` creates is already there — created at build time for production (in both the PHP and Nginx images) and on every boot by the development entrypoint. It is a *relative* link, so it stays valid on the host as well. Files written to `Storage::disk('public')` are served by Nginx at `/storage/<file>`; the private disk is not mounted into the web container at all.
 
+
+### Versioning Policy
+
+Every version is pinned at the level where an update could break something, and left floating below it, so security patches still arrive when the images are rebuilt:
+
+- **Stateful services — major version** (`postgres:16`, `redis:8-alpine`). A major upgrade can change the on-disk data format, so it has to be a deliberate step.
+- **Base images — compatibility line** (`php:8.5-fpm-trixie`, `node:26-alpine`, `nginx:1.30-alpine`, `composer/composer:2-bin`). The Debian suffix matters: without it, a new Debian release silently replaces the base image and renames the libraries that `apt-get` installs.
+- **Application dependencies — lockfiles** (`composer.lock`, `package-lock.json`), with version ranges in `composer.json` and `package.json`.
+- **Code downloaded at build time — exact versions** (the PECL extensions, nvm, and the php-fpm health check script, which is also verified by checksum).
+
+Floating patch versions only arrive on a rebuild, so rebuild with `docker compose build --pull`. Exact pins never update themselves; in a real project, pair them with Renovate or Dependabot.
 
 ## Contributing
 

@@ -1,11 +1,11 @@
 # docker/development/workspace/Dockerfile
 # Use the official PHP CLI image as the base
-FROM php:8.5-cli
+FROM php:8.5-cli-trixie
 
 # Set environment variables for user and group ID
 ARG UID=1000
 ARG GID=1000
-ARG NODE_VERSION=24
+ARG NODE_VERSION=26
 
 # Install system dependencies and build libraries
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -26,10 +26,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zip \
     bcmath \
     soap \
-    && pecl install redis \
+    && pecl install redis-6.3.0 \
     && docker-php-ext-enable redis \
-    && curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer \
     && apt-get autoremove -y && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+COPY --from=composer/composer:2-bin /composer /usr/local/bin/composer
 
 # Use ARG to define environment variables passed from the Docker build command or Docker Compose.
 ARG XDEBUG_ENABLED
@@ -41,7 +42,7 @@ ARG XDEBUG_LOG_LEVEL
 
 # Configure Xdebug if enabled
 RUN if [ "${XDEBUG_ENABLED}" = "true" ]; then \
-    pecl install xdebug && \
+    pecl install xdebug-3.5.3 && \
     docker-php-ext-enable xdebug && \
     echo "xdebug.mode=${XDEBUG_MODE}" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini && \
     echo "xdebug.idekey=${XDEBUG_IDE_KEY}" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini && \
@@ -69,7 +70,7 @@ ENV NVM_DIR=/home/www/.nvm
 # Install NVM (Node Version Manager) as the www user
 # The 'current' symlink gives the installed version a fixed path, since
 # NODE_VERSION is a major and nvm resolves it to a patch release at build time.
-RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.6/install.sh | bash && \
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.8/install.sh | bash && \
     [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && \
     nvm install ${NODE_VERSION} && \
     nvm alias default ${NODE_VERSION} && \
