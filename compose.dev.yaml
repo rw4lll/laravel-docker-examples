@@ -37,7 +37,7 @@ services:
         UID: ${UID:-1000}
         GID: ${GID:-1000}
         XDEBUG_ENABLED: ${XDEBUG_ENABLED:-true}
-        XDEBUG_MODE: develop,coverage,debug,profile
+        XDEBUG_MODE: develop,debug
         XDEBUG_HOST: ${XDEBUG_HOST:-host.docker.internal}
         XDEBUG_IDE_KEY: ${XDEBUG_IDE_KEY:-DOCKER}
         XDEBUG_LOG: /dev/stdout
@@ -63,7 +63,7 @@ services:
         UID: ${UID:-1000}
         GID: ${GID:-1000}
         XDEBUG_ENABLED: ${XDEBUG_ENABLED:-true}
-        XDEBUG_MODE: develop,coverage,debug,profile
+        XDEBUG_MODE: develop,debug
         XDEBUG_HOST: ${XDEBUG_HOST:-host.docker.internal}
         XDEBUG_IDE_KEY: ${XDEBUG_IDE_KEY:-DOCKER}
         XDEBUG_LOG: /dev/stdout
