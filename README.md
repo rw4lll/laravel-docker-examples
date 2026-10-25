@@ -190,12 +190,16 @@ The production environment is designed with security and efficiency in mind:
 
 The production image can be deployed to any Docker-compatible hosting environment, such as AWS ECS, Kubernetes, or a traditional VPS.
 
+### Upgrading
+
+Releases that change volumes or service versions include tested upgrade steps in their [release notes](https://github.com/rw4lll/laravel-docker-examples/releases).
+
 ## Technical Details
 
 - **PHP**: Version **8.5 FPM** is used for optimal performance in both development and production environments.
 - **Fonts**: Laravel 13's Vite config self-hosts its web font, downloading it from `fonts.bunny.net` **at build time**. The asset build therefore needs network access to that host; remove the `fonts` entry in `vite.config.js` if you build in an isolated environment.
 - **Node.js**: Version **26.x** (LTS) is used for building frontend assets with Vite — via NVM in the `workspace` container, and in the `assets` build stage for production.
-- **PostgreSQL**: Version **16** is used as the database in the examples, but you can adjust the configuration to use MySQL if preferred.
+- **PostgreSQL**: Version **18** is used as the database in the examples, but you can adjust the configuration to use MySQL if preferred.
 - **Redis**: Used for caching and session management, integrated into both development and production environments.
 - **Nginx**: Used as the web server to serve the Laravel application and handle HTTP requests.
 - **Docker Compose**: Orchestrates the services, simplifying the process of starting and stopping the environment.
@@ -210,7 +214,7 @@ The production image can be deployed to any Docker-compatible hosting environmen
 
 Every version is pinned at the level where an update could break something, and left floating below it, so security patches still arrive when the images are rebuilt:
 
-- **Stateful services — major version** (`postgres:16`, `redis:8-alpine`). A major upgrade can change the on-disk data format, so it has to be a deliberate step.
+- **Stateful services — major version** (`postgres:18`, `redis:8-alpine`). A major upgrade can change the on-disk data format, so it has to be a deliberate step.
 - **Base images — compatibility line** (`php:8.5-fpm-trixie`, `node:26-alpine`, `nginx:1.30-alpine`, `composer/composer:2-bin`). The Debian suffix matters: without it, a new Debian release silently replaces the base image and renames the libraries that `apt-get` installs.
 - **Application dependencies — lockfiles** (`composer.lock`, `package-lock.json`), with version ranges in `composer.json` and `package.json`.
 - **Code downloaded at build time — exact versions** (the PECL extensions, nvm, and the php-fpm health check script, which is also verified by checksum).

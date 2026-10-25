@@ -84,7 +84,7 @@ services:
         condition: service_healthy
 
   postgres:
-    image: postgres:16
+    image: postgres:18
     restart: unless-stopped
     user: postgres
     ports:
@@ -96,7 +96,9 @@ services:
       - POSTGRES_USER=${DB_USERNAME:-laravel}
       - POSTGRES_PASSWORD=${DB_PASSWORD:-secret}
     volumes:
-      - postgres-data-production:/var/lib/postgresql/data
+      # Postgres 18+ keeps its data in a versioned subdirectory (18/docker),
+      # so the volume is mounted one level up from the old .../data path
+      - postgres-data-production:/var/lib/postgresql
     networks:
       - laravel-production
     # Health check for PostgreSQL

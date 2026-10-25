@@ -81,7 +81,7 @@ services:
       - laravel-development
 
   postgres:
-    image: postgres:16
+    image: postgres:18
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     environment:
@@ -89,7 +89,9 @@ services:
       - POSTGRES_USER=laravel
       - POSTGRES_PASSWORD=secret
     volumes:
-      - postgres-data-development:/var/lib/postgresql/data
+      # Postgres 18+ keeps its data in a versioned subdirectory (18/docker),
+      # so the volume is mounted one level up from the old .../data path
+      - postgres-data-development:/var/lib/postgresql
     networks:
       - laravel-development
     healthcheck:
