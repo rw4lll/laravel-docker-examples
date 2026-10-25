@@ -26,7 +26,10 @@ LICENSE
 
 # The rest of .gitignore: Docker does not read it, so files that git ignores
 # but that exist locally would otherwise be sent with the build context
+**/*.dump
 **/*.log
+**/*.sql
+**/*.sql.gz
 .phpactor.json
 .phpunit.result.cache
 .phpunit.cache

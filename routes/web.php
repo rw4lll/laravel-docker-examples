@@ -13,7 +13,7 @@ if (app()->isLocal()) {
     Route::get('/info', function () {
         Log::info('Phpinfo page visited');
 
-        return phpinfo();
+        return response()->stream(fn () => phpinfo());
     });
 }
 
