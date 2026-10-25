@@ -199,6 +199,7 @@ The production image can be deployed to any Docker-compatible hosting environmen
 - **Nginx**: Used as the web server to serve the Laravel application and handle HTTP requests.
 - **Docker Compose**: Orchestrates the services, simplifying the process of starting and stopping the environment.
 - **Health Checks**: Implemented in the Docker Compose configurations and Laravel application to ensure all services are operational.
+- **Storage**: Only `storage/app` is persisted in a volume — `storage/framework` is per-build scratch space and logs go to `stderr` (`docker compose logs php-fpm`) rather than to a file inside the container. Mounting the whole `storage/` directory instead would hide the skeleton shipped in the image and break the application with `Please provide a valid cache path.`
 
 
 ## Contributing

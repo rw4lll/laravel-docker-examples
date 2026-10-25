@@ -7,14 +7,6 @@ services:
       dockerfile: ./docker/common/Dockerfile
       target: web
     restart: unless-stopped # Automatically restart unless the service is explicitly stopped
-    volumes:
-      # Mount the 'laravel-storage-production' volume to '/var/www/storage' inside the container.
-      # -----------------------------------------------------------
-      # This volume stores persistent data like uploaded files and cache.
-      # The ':ro' option mounts it as read-only in the 'web' service because Nginx only needs to read these files.
-      # The 'php-fpm' service mounts the same volume without ':ro' to allow write operations.
-      # -----------------------------------------------------------
-      - laravel-storage-production:/var/www/storage:ro
     networks:
       - laravel-production
     ports:
@@ -45,7 +37,15 @@ services:
       target: production
     restart: unless-stopped
     volumes:
-      - laravel-storage-production:/var/www/storage  # Mount the storage volume
+      # Keep the user files. This is the only part of 'storage' with data.
+      # -----------------------------------------------------------
+      # 'storage/framework' holds temporary files and 'storage/logs' is empty,
+      # because logs go to stderr, so both can stay inside the container.
+      # Mount 'storage/app' only: a mount over the whole 'storage' directory
+      # hides the folders from the image, and Laravel then fails to start.
+      # The volume can start empty - Laravel creates what it needs.
+      # -----------------------------------------------------------
+      - laravel-storage-production:/var/www/storage/app
     env_file:
       - .env
     environment:
