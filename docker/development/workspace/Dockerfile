@@ -4,9 +4,6 @@
 # Use the official PHP CLI image as the base
 FROM php:8.5-cli-trixie
 
-# Set environment variables for user and group ID
-ARG UID=1000
-ARG GID=1000
 ARG NODE_VERSION=26
 
 # Install system dependencies and build libraries
@@ -53,6 +50,11 @@ RUN if [ "${XDEBUG_ENABLED}" = "true" ]; then \
     echo "xdebug.client_host=${XDEBUG_HOST}" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini && \
     echo "xdebug.start_with_request=trigger" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini ; \
 fi
+
+# Every RUN after an ARG is rebuilt when its value changes, so the user IDs come
+# after the extension build: a different UID rebuilds only the layers below
+ARG UID=1000
+ARG GID=1000
 
 # If the group already exists, use it; otherwise, create the 'www' group
 RUN if getent group ${GID}; then \
