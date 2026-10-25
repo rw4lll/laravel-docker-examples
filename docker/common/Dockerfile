@@ -102,6 +102,7 @@ COPY --from=builder /usr/local/bin/docker-php-ext-* /usr/local/bin/
 # security in a live environment.
 # -----------------------------------------------------------
 RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+COPY ./docker/common/php/conf.d/*.ini "$PHP_INI_DIR/conf.d/"
 
 # Keep the image-provided FPM global config intact and add pool overrides separately
 COPY ./docker/common/php-fpm/conf.d/*.conf /usr/local/etc/php-fpm.d/
