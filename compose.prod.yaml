@@ -48,6 +48,9 @@ services:
       - laravel-storage-production:/var/www/storage  # Mount the storage volume
     env_file:
       - .env
+    environment:
+      # Write logs to stderr, so 'docker compose logs php-fpm' shows them.
+      - LOG_CHANNEL=stderr
     networks:
       - laravel-production
     healthcheck:
