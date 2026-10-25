@@ -83,11 +83,13 @@ services:
     restart: unless-stopped
     user: postgres
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      # Published ports bypass host firewalls such as ufw, so keep it on localhost
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     environment:
-      - POSTGRES_DB=${POSTGRES_DATABASE:-app}
-      - POSTGRES_USER=${POSTGRES_USERNAME:-laravel}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-secret}
+      # The same credentials Laravel reads from .env
+      - POSTGRES_DB=${DB_DATABASE:-app}
+      - POSTGRES_USER=${DB_USERNAME:-laravel}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-secret}
     volumes:
       - postgres-data-production:/var/lib/postgresql/data
     networks:
