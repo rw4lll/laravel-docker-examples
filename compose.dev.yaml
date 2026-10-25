@@ -54,6 +54,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy  # Wait until postgres accepts connections
+      redis:
+        condition: service_healthy
 
   workspace:
    # For the workspace service, we will also create a custom image to install and setup all the necessary stuff.
@@ -102,6 +104,11 @@ services:
     image: redis:alpine
     networks:
       - laravel-development
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
 networks:
   laravel-development:
