@@ -9,8 +9,9 @@ services:
       # Mount the Nginx configuration file
       - ./docker/development/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     ports:
-      # Map port 80 inside the container to the port specified by 'NGINX_PORT' on the host machine
-      - "${NGINX_PORT:-80}:80"
+      # Localhost only: a debug-mode app shouldn't be reachable from the network,
+      # and published ports bypass host firewalls such as ufw
+      - "127.0.0.1:${NGINX_PORT:-80}:80"
     environment:
       - NGINX_HOST=localhost
     networks:
@@ -78,7 +79,7 @@ services:
       - VITE_PORT=${VITE_PORT:-5173}
     ports:
       # The same port on both sides: Vite puts its own port into the asset URLs
-      - '${VITE_PORT:-5173}:${VITE_PORT:-5173}'
+      - '127.0.0.1:${VITE_PORT:-5173}:${VITE_PORT:-5173}'
     # Vite runs here through 'exec', so stopping the stack kills it before it
     # can remove public/hot, and pages then load assets from a dead dev server
     command: ["sh", "-c", "rm -f public/hot && exec bash"]
