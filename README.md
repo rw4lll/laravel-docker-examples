@@ -8,8 +8,10 @@
   - [Development Environment](#development-environment)
   - [Production Environment](#production-environment)
 - [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
   - [Clone the Repository](#clone-the-repository)
   - [Setting Up the Development Environment](#setting-up-the-development-environment)
+  - [Notes for Linux and WSL](#notes-for-linux-and-wsl)
 - [Usage](#usage)
 - [Production Environment](#production-environment-1)
   - [Building and Running the Production Environment](#building-and-running-the-production-environment)
@@ -102,13 +104,14 @@ cd laravel-docker-examples
 
 ### Setting Up the Development Environment
 
-1. Copy the .env.example file to .env and adjust any necessary environment variables:
+1. Create the `.env` file and set `UID` and `GID` to your user and group ID, so that files created inside the containers belong to you:
 
 ```bash
 cp .env.example .env
+sed -i.bak "s/^UID=.*/UID=$(id -u)/; s/^GID=.*/GID=$(id -g)/" .env && rm .env.bak
 ```
 
-Hint: adjust the `UID` and `GID` variables in the `.env` file to match your user ID and group ID. You can find these by running `id -u` and `id -g` in the terminal.
+The IDs are built into the images, so after changing them later, run `docker compose -f compose.dev.yaml up -d --build`. If port 80, 5432 or 5173 is taken, set `NGINX_PORT`, `POSTGRES_PORT` or `VITE_PORT` in `.env`, and add the port to `APP_URL` (e.g. `http://localhost:8080`).
 
 2. Start the Docker Compose Services:
 
@@ -133,6 +136,12 @@ Laravel's `composer dev` script is not needed: it starts `php artisan serve` on 
 5. Access the Application:
 
 Open your browser and navigate to [http://localhost](http://localhost).
+
+### Notes for Linux and WSL
+
+- **Permissions**: if `php-fpm` exits and `docker compose -f compose.dev.yaml logs php-fpm` says that `/var/www` is not writable, or `composer setup` fails with `vendor does not exist and could not be created`, `UID` and `GID` in `.env` don't match your user. Fix them and run `docker compose -f compose.dev.yaml up -d --build`. Don't `chmod -R 777` the project instead: the files it creates then belong to another account, and removing them needs `sudo`.
+- **Rootless Docker** isn't supported by the development stack: the project directory appears as owned by root inside the containers.
+- **WSL**: keep the project in the Linux file system (e.g. `~/projects`), not under `/mnt/c`, where file changes don't reach the Vite dev server and bind mounts are much slower ([Docker's WSL best practices](https://docs.docker.com/desktop/features/wsl/best-practices/)).
 
 ## Usage
 
@@ -192,10 +201,10 @@ The production environment is designed with security and efficiency in mind:
 
 ```bash
 cp .env.example .env
-echo "APP_KEY=base64:$(openssl rand -base64 32)"   # put this line into .env
+sed -i.bak "s|^APP_KEY=.*|APP_KEY=base64:$(openssl rand -base64 32)|" .env && rm .env.bak
 ```
 
-Set `DB_PASSWORD` before the first start: Postgres applies it only when it creates the database. `APP_ENV` and `APP_DEBUG` can stay as they are, because `compose.prod.yaml` forces `production` and `false`.
+Without `APP_KEY`, `php-fpm` refuses to start: `--wait` reports it as unhealthy, and `docker compose -f compose.prod.yaml logs php-fpm` says why. Set `DB_PASSWORD` before the first start: Postgres applies it only when it creates the database. `APP_ENV` and `APP_DEBUG` can stay as they are, because `compose.prod.yaml` forces `production` and `false`.
 
 2. Build the images and start the stack:
 
@@ -203,7 +212,7 @@ Set `DB_PASSWORD` before the first start: Postgres applies it only when it creat
 docker compose -f compose.prod.yaml up -d --build --wait
 ```
 
-The application is served at [http://localhost](http://localhost). If port 80 is taken, set `NGINX_PORT`; Postgres is published on `127.0.0.1` only, at `POSTGRES_PORT` (default 5432).
+The application is served at [http://localhost](http://localhost). If port 80 is taken, set `NGINX_PORT` in `.env` and add the port to `APP_URL`, which Laravel uses for generated links such as `Storage::url()`. Postgres is published on `127.0.0.1` only, at `POSTGRES_PORT` (default 5432). The development and production stacks use the same ports, so stop one before starting the other.
 
 ### Deploying
 
@@ -225,6 +234,8 @@ Releases that change volumes or service versions include tested upgrade steps in
 - **Health Checks**: Implemented in the Docker Compose configurations and Laravel application to ensure all services are operational.
 - **Storage**: Only `storage/app` is persisted in a volume — `storage/framework` is per-build scratch space and logs go to `stderr` (`docker compose logs php-fpm`) rather than to a file inside the container. Mounting the whole `storage/` directory instead would hide the skeleton shipped in the image and break the application with `Please provide a valid cache path.`
 - **Public Files**: The `public/storage` symlink that `php artisan storage:link` creates is already there — created at build time for production (in both the PHP and Nginx images) and on every boot by the development entrypoint. It is a *relative* link, so it stays valid on the host as well. Files written to `Storage::disk('public')` are served by Nginx at `/storage/<file>`; the private disk is not mounted into the web container at all.
+- **Compose Project Names**: set by `name:` in both compose files, so volume names don't depend on the directory you cloned into. When you copy this setup into your own project, change them: two projects with the same name share their containers and database.
+- **Published Ports**: the development stack publishes Nginx, Vite and Postgres on `127.0.0.1` only, because a debug-mode application shouldn't be reachable from the network, and Docker's published ports bypass host firewalls such as ufw. To open the application from another device, remove the `127.0.0.1:` prefix in `compose.dev.yaml`. Production publishes Nginx on all interfaces and Postgres on `127.0.0.1`.
 - **Uploads**: Requests of up to 20 MB are accepted, set in both Nginx (`client_max_body_size`) and PHP (`docker/common/php/conf.d/uploads.ini`). Keep the two values equal when changing the limit.
 - **Xdebug**: Runs in the `debug` and `develop` modes and starts a debug session only on a trigger: the browser extension, or `XDEBUG_TRIGGER=1` for CLI commands. Coverage and profiling are off by default, because they slow down every PHP run; enable them per command, e.g. `XDEBUG_MODE=coverage php artisan test --coverage`.
 - **Production Environment Variables**: `compose.prod.yaml` sets `APP_ENV=production` and `APP_DEBUG=false` on `php-fpm`, overriding the development defaults in the shared `.env`, so error pages never expose debug details in production.
