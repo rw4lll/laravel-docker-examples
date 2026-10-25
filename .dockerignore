@@ -52,4 +52,5 @@ bootstrap/cache/*.php
 storage/framework/*
 storage/logs/*
 public/build
+public/storage
 !storage/**/.gitignore

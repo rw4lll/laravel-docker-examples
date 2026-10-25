@@ -109,6 +109,13 @@ COPY ./docker/common/php-fpm/conf.d/*.conf /usr/local/etc/php-fpm.d/
 # Copy the application code and dependencies from the build stage
 COPY --from=builder /var/www /var/www
 
+# Link the public disk, the same as 'php artisan storage:link'
+# -----------------------------------------------------------
+# The link is relative, so it also works on the host in development.
+# The 'web' stage makes the same link for Nginx.
+# -----------------------------------------------------------
+RUN ln -sfn ../storage/app/public /var/www/public/storage
+
 # Set working directory
 WORKDIR /var/www
 
@@ -201,6 +208,9 @@ COPY ./docker/production/nginx/nginx.conf /etc/nginx/nginx.conf
 COPY ./public /var/www/public
 # API-only: drop this line
 COPY --from=assets /var/www/public/build /var/www/public/build
+
+# The same link as in the PHP image: Nginx serves these files at '/storage'
+RUN ln -sfn ../storage/app/public /var/www/public/storage
 
 WORKDIR /var/www/public
 

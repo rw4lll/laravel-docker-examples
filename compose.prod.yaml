@@ -7,6 +7,19 @@ services:
       dockerfile: ./docker/common/Dockerfile
       target: web
     restart: unless-stopped # Automatically restart unless the service is explicitly stopped
+    volumes:
+      # Files that Nginx serves at '/storage', through the 'public/storage' link.
+      # -----------------------------------------------------------
+      # 'subpath' mounts only 'app/public', so private files are not in this
+      # container. Read-only: only the 'php-fpm' service writes files.
+      # API-only project? Remove this mount.
+      # -----------------------------------------------------------
+      - type: volume
+        source: laravel-storage-production
+        target: /var/www/storage/app/public
+        read_only: true
+        volume:
+          subpath: public
     networks:
       - laravel-production
     ports:

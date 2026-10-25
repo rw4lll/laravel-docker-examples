@@ -58,6 +58,7 @@ The production environment is configured using the `compose.prod.yaml` file. It 
 - **Health Checks**: Built-in health checks monitor service statuses and ensure smooth operation.
 - **Security Best Practices**: Minimizes the attack surface by excluding unnecessary packages and users.
 - **Docker Compose for Production**: Tailored for deploying Laravel applications with Nginx, PHP-FPM, Redis, and PostgreSQL.
+- **Public Disk Ready**: `Storage::disk('public')` works out of the box — the `public/storage` symlink is baked into both images and Nginx mounts only that part of the storage volume, read-only.
 
 This environment is designed for easy deployment to any Docker-compatible hosting platform.
 
@@ -200,6 +201,7 @@ The production image can be deployed to any Docker-compatible hosting environmen
 - **Docker Compose**: Orchestrates the services, simplifying the process of starting and stopping the environment.
 - **Health Checks**: Implemented in the Docker Compose configurations and Laravel application to ensure all services are operational.
 - **Storage**: Only `storage/app` is persisted in a volume — `storage/framework` is per-build scratch space and logs go to `stderr` (`docker compose logs php-fpm`) rather than to a file inside the container. Mounting the whole `storage/` directory instead would hide the skeleton shipped in the image and break the application with `Please provide a valid cache path.`
+- **Public Files**: The `public/storage` symlink that `php artisan storage:link` creates is already there — created at build time for production (in both the PHP and Nginx images) and on every boot by the development entrypoint. It is a *relative* link, so it stays valid on the host as well. Files written to `Storage::disk('public')` are served by Nginx at `/storage/<file>`; the private disk is not mounted into the web container at all.
 
 
 ## Contributing
