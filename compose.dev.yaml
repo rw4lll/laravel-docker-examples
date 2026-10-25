@@ -74,8 +74,11 @@ services:
     # Docker Desktop resolves this name by itself; on Linux, Xdebug needs the mapping
     extra_hosts:
       - host.docker.internal:host-gateway
+    environment:
+      - VITE_PORT=${VITE_PORT:-5173}
     ports:
-      - '${VITE_PORT:-5173}:5173'
+      # The same port on both sides: Vite puts its own port into the asset URLs
+      - '${VITE_PORT:-5173}:${VITE_PORT:-5173}'
     # Vite runs here through 'exec', so stopping the stack kills it before it
     # can remove public/hot, and pages then load assets from a dead dev server
     command: ["sh", "-c", "rm -f public/hot && exec bash"]
