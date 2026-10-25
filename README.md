@@ -65,7 +65,7 @@ This environment is designed for easy deployment to any Docker-compatible hostin
 
 ### Development Environment
 
-The development environment is configured using the `compose.dev.yaml` file and is built on top of the production version. This ensures the development environment is as close to production as possible while still supporting tools like Xdebug and writable permissions.
+The development environment is configured using the `compose.dev.yaml` file and builds on the same PHP runtime stage as production. This ensures the development environment is as close to production as possible while still supporting tools like Xdebug and writable permissions.
 
 Key features include:
 - **Close Parity with Production**: Mirrors the production environment to minimize deployment issues.
@@ -91,6 +91,8 @@ docker compose version
 
 If these commands do not return the versions, install Docker and Docker Compose using the official documentation: [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/).
 
+Docker Engine **26.0** or newer is required, because the production stack mounts part of a volume with `subpath`. The setup is tested with Docker Engine 29.7 and Docker Compose 5.4.
+
 ### Clone the Repository
 
 ```bash
@@ -114,20 +116,19 @@ Hint: adjust the `UID` and `GID` variables in the `.env` file to match your user
 docker compose -f compose.dev.yaml up -d
 ```
 
-3. Install Laravel Dependencies:
+3. Install the dependencies, generate the application key, run the migrations and build the assets. Laravel's `composer setup` script does all of it:
 
 ```bash
-docker compose -f compose.dev.yaml exec workspace bash
-composer install
-npm install
-npm run dev
+docker compose -f compose.dev.yaml exec workspace composer setup
 ```
 
-4. Run Migrations:
+4. Optionally, start the Vite dev server for hot reloading:
 
 ```bash
-docker compose -f compose.dev.yaml exec workspace php artisan migrate
+docker compose -f compose.dev.yaml exec workspace npm run dev
 ```
+
+Laravel's `composer dev` script is not needed: it starts `php artisan serve` on port 8000, while here Nginx and PHP-FPM already serve the application.
 
 5. Access the Application:
 
@@ -185,6 +186,24 @@ The production environment is designed with security and efficiency in mind:
 - **Health Checks**: Implemented to monitor the status of services and ensure they are functioning correctly.
 - **HTTPS Setup**: While not included in this example, it's recommended to configure SSL certificates and use HTTPS in a production environment.
 
+### Building and Running the Production Environment
+
+1. Create the `.env` file and give it a real application key and database password:
+
+```bash
+cp .env.example .env
+echo "APP_KEY=base64:$(openssl rand -base64 32)"   # put this line into .env
+```
+
+Set `DB_PASSWORD` before the first start: Postgres applies it only when it creates the database. `APP_ENV` and `APP_DEBUG` can stay as they are, because `compose.prod.yaml` forces `production` and `false`.
+
+2. Build the images and start the stack:
+
+```bash
+docker compose -f compose.prod.yaml up -d --build --wait
+```
+
+The application is served at [http://localhost](http://localhost). If port 80 is taken, set `NGINX_PORT`; Postgres is published on `127.0.0.1` only, at `POSTGRES_PORT` (default 5432).
 
 ### Deploying
 
@@ -200,7 +219,7 @@ Releases that change volumes or service versions include tested upgrade steps in
 - **Fonts**: Laravel 13's Vite config self-hosts its web font, downloading it from `fonts.bunny.net` **at build time**. The asset build therefore needs network access to that host; remove the `fonts` entry in `vite.config.js` if you build in an isolated environment.
 - **Node.js**: Version **26.x** (LTS) is used for building frontend assets with Vite — via NVM in the `workspace` container, and in the `assets` build stage for production.
 - **PostgreSQL**: Version **18** is used as the database in the examples, but you can adjust the configuration to use MySQL if preferred.
-- **Redis**: Used for caching and session management, integrated into both development and production environments.
+- **Redis**: Used for the cache and the queue in both environments. Sessions are stored in the database.
 - **Nginx**: Used as the web server to serve the Laravel application and handle HTTP requests.
 - **Docker Compose**: Orchestrates the services, simplifying the process of starting and stopping the environment.
 - **Health Checks**: Implemented in the Docker Compose configurations and Laravel application to ensure all services are operational.
