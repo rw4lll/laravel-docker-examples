@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 # docker/development/workspace/Dockerfile
 # Use the official PHP CLI image as the base
 FROM php:8.5-cli-trixie
@@ -58,9 +60,7 @@ RUN if getent group ${GID}; then \
     else \
       groupadd -g ${GID} www && \
       useradd -m -u ${UID} -g www -s /bin/bash www; \
-    fi && \
-    usermod -aG sudo www && \
-    echo 'www ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+    fi
 
 # Switch to the non-root user to install NVM and Node.js
 USER www

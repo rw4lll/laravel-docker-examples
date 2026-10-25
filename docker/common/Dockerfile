@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 # Stage 1: Build environment and Composer dependencies
 # The Debian suffix prevents a silent switch to the next Debian release, which
 # renames the library packages installed with apt-get below
@@ -48,7 +50,7 @@ WORKDIR /var/www
 # In other cases, it would be possible to copy composer files
 # first, to leverage Docker's layer caching mechanism.
 # -----------------------------------------------------------
-COPY . /var/www
+COPY --exclude=docker . /var/www
 
 # Install Composer dependencies
 RUN composer install --no-dev --optimize-autoloader --no-interaction --no-progress --prefer-dist
@@ -92,7 +94,6 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # Copy PHP extensions and libraries from the builder stage
 COPY --from=builder /usr/local/lib/php/extensions/ /usr/local/lib/php/extensions/
 COPY --from=builder /usr/local/etc/php/conf.d/ /usr/local/etc/php/conf.d/
-COPY --from=builder /usr/local/bin/docker-php-ext-* /usr/local/bin/
 
 # Use the recommended production PHP configuration
 # -----------------------------------------------------------
@@ -106,8 +107,6 @@ COPY ./docker/common/php/conf.d/*.ini "$PHP_INI_DIR/conf.d/"
 
 # Keep the image-provided FPM global config intact and add pool overrides separately
 COPY ./docker/common/php-fpm/conf.d/*.conf /usr/local/etc/php-fpm.d/
-# Update the variables_order to include E (for ENV)
-#RUN sed -i 's/variables_order = "GPCS"/variables_order = "EGPCS"/' "$PHP_INI_DIR/php.ini"
 
 # Copy the application code and dependencies from the build stage
 COPY --from=builder /var/www /var/www
