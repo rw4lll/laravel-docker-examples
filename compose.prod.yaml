@@ -99,7 +99,7 @@ services:
     # This prevents dependent services from starting before the database is ready.
     # -----------------------------------------------------------
     healthcheck:
-      test: [ "CMD", "pg_isready" ]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
