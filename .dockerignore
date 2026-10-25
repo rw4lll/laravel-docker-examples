@@ -4,23 +4,15 @@
 # For more help, visit the .dockerignore file reference guide at
 # https://docs.docker.com/go/build-context-dockerignore/
 
-**/.classpath
 **/.dockerignore
-**/.env
+**/.env*
 **/.git
 **/.gitignore
 **/.gitattributes
 **/.project
 **/.settings
-**/.toolstarget
-**/.vs
 **/.vscode
-**/.next
 **/.cache
-**/*.*proj.user
-**/*.dbmdl
-**/*.jfm
-**/charts
 **/docker-compose*
 **/compose.y*ml
 **/compose.*.y*ml
@@ -29,15 +21,32 @@
 **/Dockerfile*
 **/node_modules
 **/npm-debug.log
-**/obj
-**/secrets.dev.yaml
-**/values.dev.yaml
 **/vendor
 **/.DS_Store
 .editorconfig
-.env.example
 LICENSE
-README.md
+*.md
+
+# The rest of .gitignore: Docker does not read it, so files that git ignores
+# but that exist locally would otherwise be sent with the build context
+**/*.log
+.phpactor.json
+.phpunit.result.cache
+.phpunit.cache
+.claude
+.codex
+.cursor
+.idea
+.nova
+.zed
+auth.json
+public/fonts-manifest.dev.json
+storage/*.key
+storage/pail
+_ide_helper.php
+Homestead.json
+Homestead.yaml
+Thumbs.db
 
 # Ignore development-related files and directories
 # For development environment, we will use mount bind to mount the source code to the container
@@ -51,6 +60,9 @@ phpunit.xml.dist
 bootstrap/cache/*.php
 storage/framework/*
 storage/logs/*
+storage/app/private/*
+storage/app/public/*
 public/build
+public/hot
 public/storage
 !storage/**/.gitignore
