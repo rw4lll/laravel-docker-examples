@@ -37,10 +37,7 @@ FROM extensions AS vendor
 
 WORKDIR /var/www
 COPY composer.json composer.lock ./
-# COMPOSER_CACHE_DIR points Composer at the cache mount explicitly; its
-# default location depends on which directories exist in $HOME
 RUN --mount=type=cache,target=/root/.composer/cache \
-    COMPOSER_CACHE_DIR=/root/.composer/cache \
     composer install --no-dev --no-scripts --no-autoloader --no-interaction --no-progress --prefer-dist
 
 

@@ -28,8 +28,6 @@ services:
     depends_on:
       php-fpm:
         condition: service_started
-        # Restart nginx when Compose recreates php-fpm
-        restart: true
     # Checks the application through nginx via Laravel's /up endpoint.
     healthcheck:
       # Addressed as 127.0.0.1: nginx listens on IPv4 only inside the container.

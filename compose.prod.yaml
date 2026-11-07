@@ -80,8 +80,6 @@ services:
     depends_on:
       php-fpm:
         condition: service_healthy
-        # Restart nginx when Compose recreates php-fpm
-        restart: true
     # Checks the application through nginx via Laravel's /up endpoint, which
     # covers more than php-fpm's own check of the FPM pool.
     healthcheck:
@@ -93,7 +91,9 @@ services:
       start_period: 30s
 
   # Runs the migrations once, before the other PHP services start, and exits.
-  # 'docker compose up' runs it again on every deploy.
+  # 'docker compose up' runs it again on every deploy. Run it on its own
+  # first ('run --rm migrate', see the README), so that a failing migration
+  # stops the deploy before the running containers are replaced.
   migrate:
     <<: *app
     command: ["php", "artisan", "migrate", "--force"]

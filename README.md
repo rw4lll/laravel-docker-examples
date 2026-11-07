@@ -93,7 +93,7 @@ docker compose version
 
 If these commands do not return the versions, install Docker and Docker Compose using the official documentation: [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/).
 
-Docker Engine **26.0** and Docker Compose **2.26.0** or newer (Docker Desktop 4.29 or newer) are required, because the production stack mounts part of a volume with `subpath`. Older versions ignore `subpath` without an error and mount the whole volume, private files included, into the Nginx container. The setup is tested with Docker Engine 29.9 and Docker Compose 5.7.
+Docker Engine **26.0** and Docker Compose **2.26.0** or newer (Docker Desktop 4.29 or newer) are required, because the production stack mounts part of a volume with `subpath`.
 
 ### Clone the Repository
 
@@ -204,7 +204,7 @@ cp .env.example .env
 sed -i.bak "s|^APP_KEY=.*|APP_KEY=base64:$(openssl rand -base64 32)|; s|^DB_PASSWORD=.*|DB_PASSWORD=$(openssl rand -hex 16)|" .env && rm .env.bak
 ```
 
-Without `APP_KEY`, `php-fpm` refuses to start: `--wait` reports it as unhealthy, and `docker compose -f compose.prod.yaml logs php-fpm` says why. Postgres applies `DB_PASSWORD` only when it creates the database, so if you already started the stack with another password, run `docker compose -f compose.prod.yaml down -v` first. `APP_ENV` and `APP_DEBUG` can stay as they are, because `compose.prod.yaml` forces `production` and `false`.
+Without `APP_KEY`, the stack refuses to start: the `migrate` service, which runs first, exits, `--wait` reports `service "migrate" didn't complete successfully`, and `docker compose -f compose.prod.yaml logs migrate` says why. Postgres applies `DB_PASSWORD` only when it creates the database, so if you already started the stack with another password, run `docker compose -f compose.prod.yaml down -v` first. `APP_ENV` and `APP_DEBUG` can stay as they are, because `compose.prod.yaml` forces `production` and `false`.
 
 2. Build the images and start the stack:
 
@@ -216,9 +216,21 @@ The application is served at [http://localhost](http://localhost). If port 80 is
 
 The `queue` service processes the jobs on the `redis` queue (`QUEUE_CONNECTION` in `.env`), and `scheduler` runs the tasks in `routes/console.php`. If your application uses neither, remove them from `compose.prod.yaml`.
 
-Rebuild all services together, with `up -d --build` or `docker compose -f compose.prod.yaml build` without service names. The PHP image and the Nginx image each carry a copy of the compiled assets: rebuilding only one of them makes pages link to asset files that Nginx doesn't have, and every container still reports healthy.
+### Deploying a New Version
 
-### Deploying
+Build the images first, then run the migrations, and only then replace the running containers:
+
+```bash
+docker compose -f compose.prod.yaml build
+docker compose -f compose.prod.yaml run --rm migrate
+docker compose -f compose.prod.yaml up -d --wait
+```
+
+If a migration fails, the second command stops with the error and the old version keeps serving. `up -d --build` alone runs the migrations too, but by the time they fail, Compose has already replaced the PHP containers, so the application is down until the migration is fixed and deployed again.
+
+Build all services together, with no service names after `build`. The PHP image and the Nginx image each carry a copy of the compiled assets: rebuilding only one of them makes pages link to asset files that Nginx doesn't have, and every container still reports healthy.
+
+### Deploying to a Host
 
 The production image can be deployed to any Docker-compatible hosting environment, such as AWS ECS, Kubernetes, or a traditional VPS.
 
