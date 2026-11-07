@@ -55,11 +55,11 @@ This modular structure ensures shared logic between environments while allowing 
 
 The production environment is configured using the `compose.prod.yaml` file. It is optimized for performance and security, using multi-stage builds and runtime-only dependencies. It uses a shared PHP-FPM multi-stage build with the target `production`.
 
-- **Optimized Images**: Multi-stage builds ensure minimal image size and enhanced security.
+- **Optimized Images**: Multi-stage builds keep the build headers, Composer, and Node.js out of the images, and the application code belongs to root, so PHP can't modify it.
 - **Pre-Built Assets**: Assets are compiled during the build process, ensuring the container is ready to serve content immediately upon deployment.
 - **Health Checks**: Built-in health checks monitor service statuses and ensure smooth operation.
 - **Security Best Practices**: Minimizes the attack surface by excluding unnecessary packages and users.
-- **Docker Compose for Production**: Tailored for deploying Laravel applications with Nginx, PHP-FPM, Redis, and PostgreSQL.
+- **Docker Compose for Production**: Tailored for deploying Laravel applications with Nginx, PHP-FPM, Redis, and PostgreSQL. Migrations run once per deploy in a one-shot `migrate` service, and a queue worker and the scheduler run in their own containers from the same image.
 - **Public Disk Ready**: `Storage::disk('public')` works out of the box — the `public/storage` symlink is baked into both images and Nginx mounts only that part of the storage volume, read-only.
 
 This environment is designed for easy deployment to any Docker-compatible hosting platform.
@@ -73,8 +73,8 @@ Key features include:
 - **Close Parity with Production**: Mirrors the production environment to minimize deployment issues.
 - **Development Tools**: Includes Xdebug for debugging and writable permissions for mounted volumes.
 - **Hot Reloading**: Volume mounts enable real-time updates to the codebase without rebuilding containers.
-- **Services**: PHP-FPM, Nginx, Redis, PostgreSQL, and Node.js (via NVM).
-- **Custom Dockerfiles**: Extends shared configurations to include development-specific tools.
+- **Services**: PHP-FPM, Nginx, Redis, PostgreSQL, and a `workspace` container: the PHP-FPM image with Composer and Node.js added.
+- **One Dockerfile**: `docker/common/Dockerfile` builds every image, so development and production share the PHP extensions.
 
 To set up the development environment, follow the steps in the **Getting Started** section.
 
@@ -93,7 +93,7 @@ docker compose version
 
 If these commands do not return the versions, install Docker and Docker Compose using the official documentation: [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/).
 
-Docker Engine **26.0** or newer is required, because the production stack mounts part of a volume with `subpath`. The setup is tested with Docker Engine 29.7 and Docker Compose 5.4.
+Docker Engine **26.0** and Docker Compose **2.26.0** or newer (Docker Desktop 4.29 or newer) are required, because the production stack mounts part of a volume with `subpath`. Older versions ignore `subpath` without an error and mount the whole volume, private files included, into the Nginx container. The setup is tested with Docker Engine 29.9 and Docker Compose 5.7.
 
 ### Clone the Repository
 
@@ -104,7 +104,7 @@ cd laravel-docker-examples
 
 ### Setting Up the Development Environment
 
-1. Create the `.env` file and set `UID` and `GID` to your user and group ID, so that files created inside the containers belong to you:
+1. Create the `.env` file and set `UID` and `GID` to your user and group ID. On Linux, this makes the files that the containers create belong to you; Docker Desktop maps file ownership by itself:
 
 ```bash
 cp .env.example .env
@@ -131,7 +131,7 @@ docker compose -f compose.dev.yaml exec workspace composer setup
 docker compose -f compose.dev.yaml exec workspace npm run dev
 ```
 
-Laravel's `composer dev` script is not needed: it starts `php artisan serve` on port 8000, while here Nginx and PHP-FPM already serve the application.
+Laravel's `composer dev` script is not needed: it starts `php artisan serve` on port 8000, while here Nginx and PHP-FPM already serve the application. It also runs a queue worker; to process queued jobs in development, run `docker compose -f compose.dev.yaml exec workspace php artisan queue:listen`, or set `QUEUE_CONNECTION=sync` in `.env`.
 
 5. Access the Application:
 
@@ -189,7 +189,7 @@ docker compose -f compose.dev.yaml logs -f web
 
 The production environment is designed with security and efficiency in mind:
 
-- **Optimized Docker Images**: Uses multi-stage builds to minimize the final image size, reducing the attack surface.
+- **Optimized Docker Images**: Uses multi-stage builds, so the build tools and headers stay out of the final images.
 - **Environment Variables Management**: Sensitive data such as passwords and API keys are managed carefully to prevent exposure.
 - **User Permissions**: Containers run under non-root users where possible to follow the principle of least privilege.
 - **Health Checks**: Implemented to monitor the status of services and ensure they are functioning correctly.
@@ -201,10 +201,10 @@ The production environment is designed with security and efficiency in mind:
 
 ```bash
 cp .env.example .env
-sed -i.bak "s|^APP_KEY=.*|APP_KEY=base64:$(openssl rand -base64 32)|" .env && rm .env.bak
+sed -i.bak "s|^APP_KEY=.*|APP_KEY=base64:$(openssl rand -base64 32)|; s|^DB_PASSWORD=.*|DB_PASSWORD=$(openssl rand -hex 16)|" .env && rm .env.bak
 ```
 
-Without `APP_KEY`, `php-fpm` refuses to start: `--wait` reports it as unhealthy, and `docker compose -f compose.prod.yaml logs php-fpm` says why. Set `DB_PASSWORD` before the first start: Postgres applies it only when it creates the database. `APP_ENV` and `APP_DEBUG` can stay as they are, because `compose.prod.yaml` forces `production` and `false`.
+Without `APP_KEY`, `php-fpm` refuses to start: `--wait` reports it as unhealthy, and `docker compose -f compose.prod.yaml logs php-fpm` says why. Postgres applies `DB_PASSWORD` only when it creates the database, so if you already started the stack with another password, run `docker compose -f compose.prod.yaml down -v` first. `APP_ENV` and `APP_DEBUG` can stay as they are, because `compose.prod.yaml` forces `production` and `false`.
 
 2. Build the images and start the stack:
 
@@ -212,7 +212,9 @@ Without `APP_KEY`, `php-fpm` refuses to start: `--wait` reports it as unhealthy,
 docker compose -f compose.prod.yaml up -d --build --wait
 ```
 
-The application is served at [http://localhost](http://localhost). If port 80 is taken, set `NGINX_PORT` in `.env` and add the port to `APP_URL`, which Laravel uses for generated links such as `Storage::url()`. Postgres is published on `127.0.0.1` only, at `POSTGRES_PORT` (default 5432). The development and production stacks use the same ports, so stop one before starting the other.
+The application is served at [http://localhost](http://localhost). If port 80 is taken, set `NGINX_PORT` in `.env` and add the port to `APP_URL`, which Laravel uses for generated links such as `Storage::url()`. Postgres isn't published; use `docker compose -f compose.prod.yaml exec postgres psql -U laravel app` to reach it. The development and production stacks both publish `NGINX_PORT`, so stop one before starting the other.
+
+The `queue` service processes the jobs on the `redis` queue (`QUEUE_CONNECTION` in `.env`), and `scheduler` runs the tasks in `routes/console.php`. If your application uses neither, remove them from `compose.prod.yaml`.
 
 ### Deploying
 
@@ -226,19 +228,19 @@ Releases that change volumes or service versions include tested upgrade steps in
 
 - **PHP**: Version **8.5 FPM** is used for optimal performance in both development and production environments.
 - **Fonts**: Laravel 13's Vite config self-hosts its web font, downloading it from `fonts.bunny.net` **at build time**. The asset build therefore needs network access to that host; remove the `fonts` entry in `vite.config.js` if you build in an isolated environment.
-- **Node.js**: Version **26.x** (LTS) is used for building frontend assets with Vite — via NVM in the `workspace` container, and in the `assets` build stage for production.
+- **Node.js**: Version **26.x** (LTS) is used for building frontend assets with Vite, in the `assets` build stage for production. The `workspace` image copies Node.js from the same image.
 - **PostgreSQL**: Version **18** is used as the database in the examples, but you can adjust the configuration to use MySQL if preferred.
 - **Redis**: Used for the cache and the queue in both environments. Sessions are stored in the database.
 - **Nginx**: Used as the web server to serve the Laravel application and handle HTTP requests.
 - **Docker Compose**: Orchestrates the services, simplifying the process of starting and stopping the environment.
 - **Health Checks**: Implemented in the Docker Compose configurations and Laravel application to ensure all services are operational.
-- **Storage**: Only `storage/app` is persisted in a volume — `storage/framework` is per-build scratch space and logs go to `stderr` (`docker compose logs php-fpm`) rather than to a file inside the container. Mounting the whole `storage/` directory instead would hide the skeleton shipped in the image and break the application with `Please provide a valid cache path.`
-- **Public Files**: The `public/storage` symlink that `php artisan storage:link` creates is already there — created at build time for production (in both the PHP and Nginx images) and on every boot by the development entrypoint. It is a *relative* link, so it stays valid on the host as well. Files written to `Storage::disk('public')` are served by Nginx at `/storage/<file>`; the private disk is not mounted into the web container at all.
+- **Storage**: Only `storage/app` is persisted in a volume — `storage/framework` is per-build scratch space and logs go to `stderr` (`docker compose logs php-fpm`) rather than to a file inside the container. A volume over the whole `storage/` directory would keep the caches and compiled views of earlier releases, and a bind mount there would hide the skeleton shipped in the image and break the application with `Please provide a valid cache path.`
+- **Public Files**: The `public/storage` symlink that `php artisan storage:link --relative` creates is already there — created at build time for production (in both the PHP and Nginx images) and on every boot by the development entrypoint. It is a *relative* link, so it stays valid on the host as well. Files written to `Storage::disk('public')` are served by Nginx at `/storage/<file>`; the private disk is not mounted into the web container at all.
 - **Compose Project Names**: set by `name:` in both compose files, so volume names don't depend on the directory you cloned into. When you copy this setup into your own project, change them: two projects with the same name share their containers and database.
-- **Published Ports**: the development stack publishes Nginx, Vite and Postgres on `127.0.0.1` only, because a debug-mode application shouldn't be reachable from the network, and Docker's published ports bypass host firewalls such as ufw. To open the application from another device, remove the `127.0.0.1:` prefix in `compose.dev.yaml`. Production publishes Nginx on all interfaces and Postgres on `127.0.0.1`.
+- **Published Ports**: the development stack publishes Nginx, Vite and Postgres on `127.0.0.1` only, because a debug-mode application shouldn't be reachable from the network, and Docker's published ports bypass host firewalls such as ufw. To open the application from another device, remove the `127.0.0.1:` prefix in `compose.dev.yaml`. Production publishes only Nginx, on all interfaces.
 - **Uploads**: Requests of up to 20 MB are accepted, set in both Nginx (`client_max_body_size`) and PHP (`docker/common/php/conf.d/uploads.ini`). Keep the two values equal when changing the limit.
-- **Xdebug**: Runs in the `debug` and `develop` modes and starts a debug session only on a trigger: the browser extension, or `XDEBUG_TRIGGER=1` for CLI commands. Coverage and profiling are off by default, because they slow down every PHP run; enable them per command, e.g. `XDEBUG_MODE=coverage php artisan test --coverage`.
-- **Production Environment Variables**: `compose.prod.yaml` sets `APP_ENV=production` and `APP_DEBUG=false` on `php-fpm`, overriding the development defaults in the shared `.env`, so error pages never expose debug details in production.
+- **Xdebug**: Runs in the `debug` and `develop` modes and starts a debug session only on a trigger: the browser extension, or `XDEBUG_TRIGGER=1` for CLI commands. Coverage and profiling are off by default, because they slow down every PHP run; enable them per command, e.g. `XDEBUG_MODE=coverage php artisan test --coverage`. `XDEBUG_MODE`, `XDEBUG_HOST` and `XDEBUG_IDE_KEY` in `.env` apply on `up -d`; `XDEBUG_ENABLED=false` builds the images without Xdebug (`up -d --build`).
+- **Production Environment Variables**: `compose.prod.yaml` sets `APP_ENV=production`, `APP_DEBUG=false` and `LOG_LEVEL=info` on the PHP services, overriding the development defaults in the shared `.env`, so error pages never expose debug details in production. Container logs use Docker's `local` driver, which rotates them.
 - **Demo Routes**: `/health` reports the database, Redis and storage status as JSON. `/info` shows `phpinfo()` and is registered only when `APP_ENV=local`, because it prints every environment variable, secrets included.
 
 
@@ -247,9 +249,9 @@ Releases that change volumes or service versions include tested upgrade steps in
 Every version is pinned at the level where an update could break something, and left floating below it, so security patches still arrive when the images are rebuilt:
 
 - **Stateful services — major version** (`postgres:18`, `redis:8-alpine`). A major upgrade can change the on-disk data format, so it has to be a deliberate step.
-- **Base images — compatibility line** (`php:8.5-fpm-trixie`, `node:26-alpine`, `nginx:1.30-alpine`, `composer/composer:2-bin`). The Debian suffix matters: without it, a new Debian release silently replaces the base image and renames the libraries that `apt-get` installs.
+- **Base images — compatibility line** (`php:8.5-fpm-trixie`, `node:26-trixie-slim`, `nginx:1.30-alpine`, `composer/composer:2-bin`). The Debian suffix matters: without it, a new Debian release silently replaces the base image and renames the libraries that `apt-get` installs.
 - **Application dependencies — lockfiles** (`composer.lock`, `package-lock.json`), with version ranges in `composer.json` and `package.json`.
-- **Code downloaded at build time — exact versions** (the PECL extensions, nvm, and the php-fpm health check script, which is also verified by checksum).
+- **Code downloaded at build time — exact versions** (the PECL extensions, and the php-fpm health check script, which is also verified by checksum).
 
 Floating patch versions only arrive on a rebuild, so rebuild with `docker compose build --pull`. Exact pins never update themselves; in a real project, pair them with Renovate or Dependabot.
 
