@@ -51,6 +51,9 @@ x-app: &app
 
 services:
   web:
+    # Build it together with the PHP services. Both copy the compiled assets
+    # from the same build stage; rebuilding only one of them makes nginx
+    # answer the asset URLs that PHP renders with 404.
     build:
       context: .
       dockerfile: ./docker/common/Dockerfile

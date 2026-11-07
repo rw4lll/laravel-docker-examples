@@ -216,6 +216,8 @@ The application is served at [http://localhost](http://localhost). If port 80 is
 
 The `queue` service processes the jobs on the `redis` queue (`QUEUE_CONNECTION` in `.env`), and `scheduler` runs the tasks in `routes/console.php`. If your application uses neither, remove them from `compose.prod.yaml`.
 
+Rebuild all services together, with `up -d --build` or `docker compose -f compose.prod.yaml build` without service names. The PHP image and the Nginx image each carry a copy of the compiled assets: rebuilding only one of them makes pages link to asset files that Nginx doesn't have, and every container still reports healthy.
+
 ### Deploying
 
 The production image can be deployed to any Docker-compatible hosting environment, such as AWS ECS, Kubernetes, or a traditional VPS.
