@@ -1,17 +1,69 @@
 name: laravel-docker-examples-prod
 
+# Settings that every PHP service shares. They run one image: 'php-fpm'
+# serves requests, and the others run Artisan commands.
+# -----------------------------------------------------------
+# Written once with YAML anchors: Compose ignores top-level keys that start
+# with 'x-', '&app' names this mapping, and '<<: *app' in a service copies
+# its keys there. A key that the service sets itself replaces the whole
+# value from here, not just the entries it lists.
+# -----------------------------------------------------------
+x-app: &app
+  image: ${COMPOSE_PROJECT_NAME}-app
+  build:
+    context: .
+    dockerfile: ./docker/common/Dockerfile
+    target: production
+  restart: unless-stopped
+  volumes:
+    # Keep the user files. This is the only part of 'storage' with data.
+    # -----------------------------------------------------------
+    # 'storage/framework' holds caches and compiled views that belong to one
+    # release, and 'storage/logs' stays empty, because logs go to stderr.
+    # A volume over the whole of 'storage' would keep the old caches across
+    # releases. Docker fills the empty volume from the image on first start,
+    # including the 'public' folder that the 'web' service mounts.
+    # -----------------------------------------------------------
+    - laravel-storage-production:/var/www/storage/app
+  env_file:
+    - .env
+  environment:
+    # The shared .env is set up for development
+    - APP_ENV=production
+    - APP_DEBUG=false
+    - LOG_LEVEL=info
+    # Write logs to stderr, so 'docker compose logs' shows them
+    - LOG_CHANNEL=stderr
+  networks:
+    - laravel-production
+  # '&logging' names this value too, and 'logging: *logging' reuses it in
+  # the services that don't use '<<: *app'
+  logging: &logging
+    # Rotates the container logs, which the default json-file driver doesn't
+    driver: local
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
+
 services:
   web:
+    # Build it together with the PHP services. Both copy the compiled assets
+    # from the same build stage; rebuilding only one of them makes nginx
+    # answer the asset URLs that PHP renders with 404.
     build:
       context: .
       dockerfile: ./docker/common/Dockerfile
       target: web
-    restart: unless-stopped # Automatically restart unless the service is explicitly stopped
+    restart: unless-stopped
     volumes:
-      # Files that Nginx serves at '/storage', through the 'public/storage' link.
+      # Files that nginx serves at '/storage', through the 'public/storage' link.
       # -----------------------------------------------------------
       # 'subpath' mounts only 'app/public', so private files are not in this
-      # container. Read-only: only the 'php-fpm' service writes files.
+      # container. Read-only: only the PHP services write files.
       # API-only project? Remove this mount.
       # -----------------------------------------------------------
       - type: volume
@@ -23,15 +75,14 @@ services:
     networks:
       - laravel-production
     ports:
-      # Map port 80 inside the container to the port specified by 'NGINX_PORT' on the host machine.
-      # -----------------------------------------------------------
-      # This allows external access to the Nginx web server running inside the container.
-      # For example, if 'NGINX_PORT' is set to '8080', accessing 'http://localhost:8080' will reach the application.
-      # -----------------------------------------------------------
       - "${NGINX_PORT:-80}:80"
+    logging: *logging
     depends_on:
+      # Started, not healthy: nginx looks up php-fpm per request, so it can
+      # start first. When a deploy replaces both, Compose stops nginx with
+      # php-fpm, and waiting for a healthy php-fpm keeps it down for ~10 s.
       php-fpm:
-        condition: service_healthy  # Wait for php-fpm health check
+        condition: service_started
     # Checks the application through nginx via Laravel's /up endpoint, which
     # covers more than php-fpm's own check of the FPM pool.
     healthcheck:
@@ -42,54 +93,47 @@ services:
       retries: 3
       start_period: 30s
 
+  # Runs the migrations once, before the other PHP services start, and exits.
+  # 'docker compose up' runs it again on every deploy. Run it on its own
+  # first ('run --rm migrate', see the README), so that a failing migration
+  # stops the deploy before the running containers are replaced.
+  migrate:
+    <<: *app
+    command: ["php", "artisan", "migrate", "--force"]
+    restart: "no"
+    # Replaces the whole 'depends_on' of 'x-app', which includes this service
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   php-fpm:
-    # For the php-fpm service, we will create a custom image to install the necessary PHP extensions and setup proper permissions.
-    build:
-      context: .
-      dockerfile: ./docker/common/Dockerfile
-      target: production
-    restart: unless-stopped
-    volumes:
-      # Keep the user files. This is the only part of 'storage' with data.
-      # -----------------------------------------------------------
-      # 'storage/framework' holds temporary files and 'storage/logs' is empty,
-      # because logs go to stderr, so both can stay inside the container.
-      # Mount 'storage/app' only: a mount over the whole 'storage' directory
-      # hides the folders from the image, and Laravel then fails to start.
-      # The volume can start empty - Laravel creates what it needs.
-      # -----------------------------------------------------------
-      - laravel-storage-production:/var/www/storage/app
-    env_file:
-      - .env
-    environment:
-      # Write logs to stderr, so 'docker compose logs php-fpm' shows them.
-      - LOG_CHANNEL=stderr
-      # The shared .env is set up for development
-      - APP_ENV=production
-      - APP_DEBUG=false
-    networks:
-      - laravel-production
+    <<: *app
     healthcheck:
+      # The script exits with its own codes; Docker expects 1 for unhealthy
       test: ["CMD-SHELL", "php-fpm-healthcheck || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
-    # The 'depends_on' attribute with 'condition: service_healthy' ensures that
-    # this service will not start until the 'postgres' service passes its health check.
-    # This prevents the application from trying to connect to the database before it's ready.
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+
+  # Processes the jobs on the 'redis' queue (QUEUE_CONNECTION in .env).
+  # Remove it if the application queues nothing.
+  queue:
+    <<: *app
+    command: ["php", "artisan", "queue:work", "--tries=3"]
+    # Longer than the job timeout (60 s by default), so the worker can finish
+    # the current job when it's stopped
+    stop_grace_period: 90s
+
+  # Runs the tasks scheduled in routes/console.php.
+  # Remove it if the application schedules nothing.
+  scheduler:
+    <<: *app
+    command: ["php", "artisan", "schedule:work"]
 
   postgres:
     image: postgres:18
     restart: unless-stopped
     user: postgres
-    ports:
-      # Published ports bypass host firewalls such as ufw, so keep it on localhost
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     environment:
       # The same credentials Laravel reads from .env
       - POSTGRES_DB=${DB_DATABASE:-app}
@@ -101,12 +145,7 @@ services:
       - postgres-data-production:/var/lib/postgresql
     networks:
       - laravel-production
-    # Health check for PostgreSQL
-    # -----------------------------------------------------------
-    # Health checks allow Docker to determine if a service is operational.
-    # The 'pg_isready' command checks if PostgreSQL is ready to accept connections.
-    # This prevents dependent services from starting before the database is ready.
-    # -----------------------------------------------------------
+    logging: *logging
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
@@ -115,14 +154,14 @@ services:
 
   redis:
     image: redis:8-alpine
-    restart: unless-stopped  # Automatically restart unless the service is explicitly stopped
+    restart: unless-stopped
+    volumes:
+      # Redis holds the queue. It saves to /data when it stops, so queued jobs
+      # survive a recreated container.
+      - redis-data-production:/data
     networks:
       - laravel-production
-    # Health check for Redis
-    # -----------------------------------------------------------
-    # Checks if Redis is responding to the 'PING' command.
-    # This ensures that the service is not only running but also operational.
-    # -----------------------------------------------------------
+    logging: *logging
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -130,13 +169,9 @@ services:
       retries: 3
 
 networks:
-  # Attach the service to the 'laravel' network.
-  # -----------------------------------------------------------
-  # This custom network allows all services within it to communicate using their service names as hostnames.
-  # For example, 'php-fpm' can connect to 'postgres' by using 'postgres' as the hostname.
-  # -----------------------------------------------------------
   laravel-production:
 
 volumes:
   postgres-data-production:
+  redis-data-production:
   laravel-storage-production:

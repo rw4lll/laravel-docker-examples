@@ -1,220 +1,211 @@
 # syntax=docker/dockerfile:1
 
-# Stage 1: Build environment and Composer dependencies
+# PHP extensions, compiled once for every PHP image
 # The Debian suffix prevents a silent switch to the next Debian release, which
-# renames the library packages installed with apt-get below
-FROM php:8.5-fpm-trixie AS builder
+# renames the library packages installed with apt-get here and in `runtime`
+FROM php:8.5-fpm-trixie AS extensions
 
-# Install system dependencies and PHP extensions required for Laravel + MySQL/PostgreSQL support
-# Some dependencies are required for PHP extensions only in the build stage
-# Node.js is not needed here: the frontend is built in the `assets` stage below
+# Headers for the extensions below, and unzip for Composer. The base image
+# already includes the compilers and the mbstring, curl, and openssl extensions.
+# pcntl lets queue workers stop between jobs and enforce job timeouts.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    unzip \
-    libpq-dev \
-    libonig-dev \
-    libssl-dev \
-    libxml2-dev \
-    libcurl4-openssl-dev \
     libicu-dev \
+    libpq-dev \
+    libxml2-dev \
     libzip-dev \
-    && docker-php-ext-install -j$(nproc) \
+    unzip \
+    && docker-php-ext-install -j"$(nproc)" \
+    bcmath \
+    intl \
+    pcntl \
     pdo_mysql \
     pdo_pgsql \
     pgsql \
-    intl \
-    zip \
-    bcmath \
     soap \
+    zip \
     && pecl install redis-6.3.0 \
     && docker-php-ext-enable redis \
-    && apt-get autoremove -y && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    && rm -rf /var/lib/apt/lists/* /tmp/pear
 
 COPY --from=composer/composer:2-bin /composer /usr/local/bin/composer
 
-# Set the working directory inside the container
+
+# Composer dependencies, installed from the lock file only
+# This layer is rebuilt only when composer.json or composer.lock changes.
+# The scripts run in `app`, because they need the application code.
+FROM extensions AS vendor
+
 WORKDIR /var/www
-
-# Copy the entire Laravel application code into the container
-# -----------------------------------------------------------
-# In Laravel, the `composer install` command often triggers
-# scripts that need access to the entire application code.
-# For example, the `post-autoload-dump` event might execute
-# Artisan commands like `php artisan package:discover`. If the
-# application code (including the `artisan` file) is not
-# present, these commands will fail, leading to build errors.
-#
-# By copying the entire application code before running
-# `composer install`, we ensure that all necessary files are
-# available, allowing these scripts to run successfully.
-# In other cases, it would be possible to copy composer files
-# first, to leverage Docker's layer caching mechanism.
-# -----------------------------------------------------------
-COPY --exclude=docker . /var/www
-
-# Install Composer dependencies
-RUN composer install --no-dev --optimize-autoloader --no-interaction --no-progress --prefer-dist
+COPY composer.json composer.lock ./
+RUN --mount=type=cache,target=/root/.composer/cache \
+    composer install --no-dev --no-scripts --no-autoloader --no-interaction --no-progress --prefer-dist
 
 
-# Stage 2: Frontend assets
+# The application code with an optimized autoloader
+FROM vendor AS app
+
+# Without docker/, so editing the Docker configuration doesn't rebuild this stage
+COPY --exclude=docker . .
+
+# Runs the post-autoload-dump scripts, such as `package:discover`
+RUN composer dump-autoload --optimize --no-dev --no-interaction
+
+
+# Node.js for the `assets` and `workspace` stages
+FROM node:26-trixie-slim AS node
+
+
+# Frontend assets
 # Built once here so nginx (which serves the files) and PHP (which reads
 # manifest.json to render their URLs) can never disagree about which build.
 # API-only project? Drop this stage and the two `COPY --from=assets` lines below.
-FROM node:26-alpine AS assets
+FROM node AS assets
 
 WORKDIR /var/www
-COPY package.json package-lock.json ./
-RUN npm ci
-COPY . .
+# .npmrc sets ignore-scripts, which npm ci only applies if the file is here
+COPY package.json package-lock.json .npmrc ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+
+# Tailwind scans Blade views in vendor/, such as Laravel's pagination views
+# (see `@source` in resources/css/app.css), and skips a missing path silently
+COPY --from=vendor /var/www/vendor ./vendor
+COPY --exclude=docker . .
 RUN npm run build
 
 
-# Stage 3: Shared PHP runtime
+# Shared PHP runtime for the production and development images
 FROM php:8.5-fpm-trixie AS runtime
 
-# Install only runtime libraries needed in production
-# libfcgi-bin and procps are required for the php-fpm-healthcheck script
+# Only the libraries that the compiled extensions load, and cgi-fcgi for the
+# php-fpm-healthcheck script
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev \
-    libicu-dev \
-    libzip-dev \
     libfcgi-bin \
-    procps \
-    && apt-get autoremove -y && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+    libicu76 \
+    libpq5 \
+    libzip5 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Download and install php-fpm health check script
 ADD --chmod=755 --checksum=sha256:53bc616c4a30f029b98bff48fdeb0c4da252cb11e4f86656a8222a67dc4e5009 \
     https://raw.githubusercontent.com/renatomefi/php-fpm-healthcheck/v0.6.0/php-fpm-healthcheck \
     /usr/local/bin/php-fpm-healthcheck
 
-# Copy the initialization script
-COPY ./docker/production/php-fpm/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# Copy the compiled extensions and their ini files
+COPY --from=extensions /usr/local/lib/php/extensions/ /usr/local/lib/php/extensions/
+COPY --from=extensions /usr/local/etc/php/conf.d/ /usr/local/etc/php/conf.d/
 
-# Copy PHP extensions and libraries from the builder stage
-COPY --from=builder /usr/local/lib/php/extensions/ /usr/local/lib/php/extensions/
-COPY --from=builder /usr/local/etc/php/conf.d/ /usr/local/etc/php/conf.d/
+# Fail the build if an extension can't load, such as after adding one without its library
+RUN ! php -m 2>&1 | grep -i 'unable to load'
 
 # Use the recommended production PHP configuration
-# -----------------------------------------------------------
-# PHP provides development and production configurations.
-# Here, we replace the default php.ini with the production
-# version to apply settings optimized for performance and
-# security in a live environment.
-# -----------------------------------------------------------
 RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 COPY ./docker/common/php/conf.d/*.ini "$PHP_INI_DIR/conf.d/"
 
-# Keep the image-provided FPM global config intact and add pool overrides separately
+# Keep the image-provided FPM config intact and add pool overrides in zz-*
+# files, which load after the image's www.conf
 COPY ./docker/common/php-fpm/conf.d/*.conf /usr/local/etc/php-fpm.d/
 
-# Copy the application code and dependencies from the build stage
-COPY --from=builder /var/www /var/www
-
-# Link the public disk, the same as 'php artisan storage:link'
-# -----------------------------------------------------------
-# The link is relative, so it also works on the host in development.
-# The 'web' stage makes the same link for Nginx.
-# -----------------------------------------------------------
-RUN ln -sfn ../storage/app/public /var/www/public/storage
-
-# Set working directory
 WORKDIR /var/www
 
-# Ensure correct permissions
-RUN chown -R www-data:www-data /var/www
 
-# Switch to the non-privileged user to run the application
+# Production image
+FROM runtime AS production
+
+# www-data's home is /var/www, which root owns in this image, and tools such
+# as `php artisan tinker` fail without a writable home
+RUN mkdir /home/www-data \
+    && chown www-data:www-data /home/www-data \
+    && usermod -d /home/www-data www-data
+
+COPY --chmod=755 ./docker/production/php-fpm/entrypoint.sh /usr/local/bin/entrypoint.sh
+
+# The code belongs to root, so PHP can't change it. www-data owns only the
+# directories that Laravel writes to.
+COPY --from=app /var/www /var/www
+# API-only: drop this line
+COPY --from=assets /var/www/public/build /var/www/public/build
+RUN chown -R www-data:www-data storage bootstrap/cache
+
+# Link the public disk, the same as `php artisan storage:link --relative`.
+# The `web` stage makes the same link for nginx.
+RUN ln -sfn ../storage/app/public public/storage
+
 USER www-data
 
-# Change the default command to run the entrypoint script
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-
-# Expose port 9000 and start php-fpm server
-EXPOSE 9000
 CMD ["php-fpm"]
 
 
-# Stage 4: Production image
-FROM runtime AS production
-
-# API-only: drop this line — the stage then adds nothing, so build `runtime` instead
-COPY --from=assets --chown=www-data:www-data /var/www/public/build /var/www/public/build
-
-
-# Stage 5: Development image
-# Built from `runtime`, not `production`, so a dev build never runs the Node
-# stage - the dev stack bind-mounts the project and runs Vite in `workspace`.
+# Development image
+# Built from `runtime`, not `production`, so a dev build skips the `vendor` and
+# `assets` stages: the dev stack bind-mounts the project and runs Vite in `workspace`.
 FROM runtime AS development
 
-# Use ARG to define environment variables passed from the Docker build command or Docker Compose.
+# Xdebug reads its settings from the environment when the container starts,
+# see docker/development/php/conf.d/xdebug.ini
 ARG XDEBUG_ENABLED=true
-ARG XDEBUG_MODE=develop,debug
-ARG XDEBUG_HOST=host.docker.internal
-ARG XDEBUG_IDE_KEY=DOCKER
-ARG XDEBUG_LOG=/dev/stdout
-ARG XDEBUG_LOG_LEVEL=0
+RUN if [ "${XDEBUG_ENABLED}" = "true" ]; then \
+      pecl install xdebug-3.5.3 && docker-php-ext-enable xdebug && rm -rf /tmp/pear; \
+    fi
+COPY ./docker/development/php/conf.d/xdebug.ini "$PHP_INI_DIR/conf.d/"
+
+COPY --chmod=755 ./docker/development/php-fpm/entrypoint.sh /usr/local/bin/entrypoint.sh
+
+# A user with your host UID and GID, so the files that PHP-FPM writes to the
+# bind-mounted project belong to you. An existing group is reused, such as
+# GID 20 (`dialout` here, `staff` on macOS).
+# The ARGs come last: a changed value rebuilds only the layers after them.
+ARG UID=1000
+ARG GID=1000
+RUN if ! getent group "${GID}" >/dev/null; then groupadd -g "${GID}" www; fi \
+    && useradd -l -m -u "${UID}" -g "${GID}" -s /bin/bash www
+
+USER www
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["php-fpm"]
+
+
+# Development toolchain for the `workspace` service: the development image,
+# so Artisan and the tests run with the same PHP as PHP-FPM, plus Composer
+# and Node.js
+FROM development AS workspace
 
 USER root
 
-# Configure Xdebug if enabled
-RUN if [ "${XDEBUG_ENABLED}" = "true" ]; then \
-    pecl install xdebug-3.5.3 && \
-    docker-php-ext-enable xdebug && \
-    echo "xdebug.mode=${XDEBUG_MODE}" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini && \
-    echo "xdebug.idekey=${XDEBUG_IDE_KEY}" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini && \
-    echo "xdebug.log=${XDEBUG_LOG}" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini && \
-    echo "xdebug.log_level=${XDEBUG_LOG_LEVEL}" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini && \
-    echo "xdebug.client_host=${XDEBUG_HOST}" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini && \
-    echo "xdebug.start_with_request=trigger" >> /usr/local/etc/php/conf.d/docker-php-ext-xdebug.ini ; \
-fi
+# git and unzip for Composer, and the PostgreSQL client for `php artisan db`
+# and `schema:dump`. Debian's client is version 17, and its pg_dump refuses
+# newer servers, so the client comes from the PostgreSQL apt repository with
+# the same major version as the `postgres` image in the Compose files.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    postgresql-common \
+    unzip \
+    && /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y \
+    && apt-get install -y --no-install-recommends postgresql-client-18 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Add ARGs for syncing permissions
-ARG UID=1000
-ARG GID=1000
+COPY --from=composer/composer:2-bin /composer /usr/local/bin/composer
+COPY --from=node /usr/local/bin/node /usr/local/bin/
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
-# Create a new user with the specified UID/GID and point the php-fpm pool at it.
-RUN if getent group ${GID}; then \
-      group_name=$(getent group ${GID} | cut -d: -f1); \
-      useradd -m -u ${UID} -g ${GID} -s /bin/bash www; \
-    else \
-      groupadd -g ${GID} www && \
-      useradd -m -u ${UID} -g www -s /bin/bash www; \
-      group_name=www; \
-    fi && \
-    sed -i "s/user = www-data/user = www/g" /usr/local/etc/php-fpm.d/www.conf && \
-    sed -i "s/group = www-data/group = ${group_name}/g" /usr/local/etc/php-fpm.d/www.conf
-
-# Set the working directory
-WORKDIR /var/www
-
-# Copy the entrypoint script
-COPY ./docker/development/php-fpm/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
-
-# Switch back to the non-privileged user to run the application
 USER www
 
-# Change the default command to run the entrypoint script
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-
-# Expose port 9000 and start php-fpm server
-EXPOSE 9000
-CMD ["php-fpm"]
+# The PHP-FPM entrypoint clears caches and links the public disk, which
+# php-fpm already does on every start
+ENTRYPOINT []
+CMD ["bash"]
 
 
-# Stage 6: Production web server
+# Production web server
 FROM nginx:1.30-alpine AS web
 
-COPY ./docker/production/nginx/nginx.conf /etc/nginx/nginx.conf
+COPY ./docker/common/nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY ./public /var/www/public
 # API-only: drop this line
 COPY --from=assets /var/www/public/build /var/www/public/build
 
-# The same link as in the PHP image: Nginx serves these files at '/storage'
+# The same link as in the PHP image: nginx serves these files at /storage
 RUN ln -sfn ../storage/app/public /var/www/public/storage
-
-WORKDIR /var/www/public
-
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
