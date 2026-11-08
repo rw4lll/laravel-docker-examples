@@ -39,7 +39,7 @@ x-app: &app
   # '&logging' names this value too, and 'logging: *logging' reuses it in
   # the services that don't use '<<: *app'
   logging: &logging
-    # Rotates the container logs, which the default driver keeps forever
+    # Rotates the container logs, which the default json-file driver doesn't
     driver: local
   depends_on:
     postgres:

@@ -4,7 +4,7 @@ import { bunny } from 'laravel-vite-plugin/fonts';
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
-    // Docker: bind inside the container and point HMR at the published host port
+    // Docker: listen on all interfaces in the container and point the browser and HMR at localhost
     server: {
         host: '0.0.0.0',
         port: Number(process.env.VITE_PORT ?? 5173),

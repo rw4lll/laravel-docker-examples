@@ -5,8 +5,8 @@
 # renames the library packages installed with apt-get here and in `runtime`
 FROM php:8.5-fpm-trixie AS extensions
 
-# Headers for the extensions below. The base image already includes the
-# compilers, and the libraries for mbstring, curl, and openssl.
+# Headers for the extensions below, and unzip for Composer. The base image
+# already includes the compilers and the mbstring, curl, and openssl extensions.
 # pcntl lets queue workers stop between jobs and enforce job timeouts.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libicu-dev \
@@ -101,7 +101,8 @@ RUN ! php -m 2>&1 | grep -i 'unable to load'
 RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 COPY ./docker/common/php/conf.d/*.ini "$PHP_INI_DIR/conf.d/"
 
-# Keep the image-provided FPM global config intact and add pool overrides separately
+# Keep the image-provided FPM config intact and add pool overrides in zz-*
+# files, which load after the image's www.conf
 COPY ./docker/common/php-fpm/conf.d/*.conf /usr/local/etc/php-fpm.d/
 
 WORKDIR /var/www
@@ -136,8 +137,8 @@ CMD ["php-fpm"]
 
 
 # Development image
-# Built from `runtime`, not `production`, so a dev build skips Composer and the
-# Node stage - the dev stack bind-mounts the project and runs Vite in `workspace`.
+# Built from `runtime`, not `production`, so a dev build skips the `vendor` and
+# `assets` stages: the dev stack bind-mounts the project and runs Vite in `workspace`.
 FROM runtime AS development
 
 # Xdebug reads its settings from the environment when the container starts,

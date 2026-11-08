@@ -104,7 +104,7 @@ cd laravel-docker-examples
 
 ### Setting Up the Development Environment
 
-1. Create the `.env` file and set `UID` and `GID` to your user and group ID. On Linux, this makes the files that the containers create belong to you; Docker Desktop maps file ownership by itself:
+1. Create the `.env` file and set `UID` and `GID` to your user and group ID. On Linux and in WSL, this makes the files that the containers create belong to you; Docker Desktop on macOS maps file ownership by itself:
 
 ```bash
 cp .env.example .env
@@ -267,7 +267,7 @@ Every version is pinned at the level where an update could break something, and 
 - **Application dependencies — lockfiles** (`composer.lock`, `package-lock.json`), with version ranges in `composer.json` and `package.json`.
 - **Code downloaded at build time — exact versions** (the PECL extensions, and the php-fpm health check script, which is also verified by checksum).
 
-Floating patch versions only arrive on a rebuild, so rebuild with `docker compose build --pull`. Exact pins never update themselves; in a real project, pair them with Renovate or Dependabot.
+Floating patch versions only arrive on a rebuild, so rebuild with `docker compose -f compose.prod.yaml build --pull`, and update the images that the stack runs without building, such as `postgres` and `redis`, with `docker compose -f compose.prod.yaml pull --ignore-buildable`. Exact pins never update themselves; in a real project, pair them with Renovate or Dependabot.
 
 ## Contributing
 

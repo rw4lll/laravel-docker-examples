@@ -86,8 +86,9 @@ services:
     # Vite runs here through 'exec', so stopping the stack kills it before it
     # can remove public/hot, and pages then load assets from a dead dev server
     command: ["sh", "-c", "rm -f public/hot && exec bash"]
-    tty: true  # Enables an interactive terminal
-    stdin_open: true  # Keeps standard input open for 'docker exec'
+    # Either key keeps bash, the main process, running instead of exiting
+    tty: true  # With a terminal, bash waits for input
+    stdin_open: true  # Keeps bash's standard input open, for 'docker compose attach'
     volumes:
       - ./:/var/www
     networks:
