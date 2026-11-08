@@ -55,7 +55,7 @@ This modular structure ensures shared logic between environments while allowing 
 
 The production environment is configured using the `compose.prod.yaml` file. It is optimized for performance and security, using multi-stage builds and runtime-only dependencies. It uses a shared PHP-FPM multi-stage build with the target `production`.
 
-- **Optimized Images**: Multi-stage builds keep the build headers, Composer, and Node.js out of the images, and the application code belongs to root, so PHP can't modify it.
+- **Optimized Images**: Multi-stage builds keep the `-dev` packages, Composer, and Node.js out of the images, and the application code belongs to root, so PHP can't modify it.
 - **Pre-Built Assets**: Assets are compiled during the build process, ensuring the container is ready to serve content immediately upon deployment.
 - **Health Checks**: Built-in health checks monitor service statuses and ensure smooth operation.
 - **Security Best Practices**: Minimizes the attack surface by excluding unnecessary packages and users.
@@ -189,7 +189,7 @@ docker compose -f compose.dev.yaml logs -f web
 
 The production environment is designed with security and efficiency in mind:
 
-- **Optimized Docker Images**: Uses multi-stage builds, so the build tools and headers stay out of the final images.
+- **Optimized Docker Images**: Uses multi-stage builds, so Composer, Node.js and the `-dev` packages stay out of the final images. The compiler toolchain of the official PHP image (gcc, make, autoconf) remains.
 - **Environment Variables Management**: Sensitive data such as passwords and API keys are managed carefully to prevent exposure.
 - **User Permissions**: Containers run under non-root users where possible to follow the principle of least privilege.
 - **Health Checks**: Implemented to monitor the status of services and ensure they are functioning correctly.
@@ -262,7 +262,7 @@ Releases that change volumes or service versions include tested upgrade steps in
 
 Every version is pinned at the level where an update could break something, and left floating below it, so security patches still arrive when the images are rebuilt:
 
-- **Stateful services — major version** (`postgres:18`, `redis:8-alpine`). A major upgrade can change the on-disk data format, so it has to be a deliberate step.
+- **Stateful services — major version** (`postgres:18`, `redis:8-alpine`). A major upgrade can change the on-disk data format, so it has to be a deliberate step. The workspace's PostgreSQL client (`postgresql-client-18`) follows the server's major, because `pg_dump` refuses newer servers.
 - **Base images — compatibility line** (`php:8.5-fpm-trixie`, `node:26-trixie-slim`, `nginx:1.30-alpine`, `composer/composer:2-bin`). The Debian suffix matters: without it, a new Debian release silently replaces the base image and renames the libraries that `apt-get` installs.
 - **Application dependencies — lockfiles** (`composer.lock`, `package-lock.json`), with version ranges in `composer.json` and `package.json`.
 - **Code downloaded at build time — exact versions** (the PECL extensions, and the php-fpm health check script, which is also verified by checksum).

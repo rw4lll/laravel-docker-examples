@@ -62,7 +62,8 @@ FROM node:26-trixie-slim AS node
 FROM node AS assets
 
 WORKDIR /var/www
-COPY package.json package-lock.json ./
+# .npmrc sets ignore-scripts, which npm ci only applies if the file is here
+COPY package.json package-lock.json .npmrc ./
 RUN --mount=type=cache,target=/root/.npm npm ci
 
 # Tailwind scans Blade views in vendor/, such as Laravel's pagination views
@@ -172,10 +173,15 @@ FROM development AS workspace
 USER root
 
 # git and unzip for Composer, and the PostgreSQL client for `php artisan db`
+# and `schema:dump`. Debian's client is version 17, and its pg_dump refuses
+# newer servers, so the client comes from the PostgreSQL apt repository with
+# the same major version as the `postgres` image in the Compose files.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
-    postgresql-client \
+    postgresql-common \
     unzip \
+    && /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y \
+    && apt-get install -y --no-install-recommends postgresql-client-18 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=composer/composer:2-bin /composer /usr/local/bin/composer

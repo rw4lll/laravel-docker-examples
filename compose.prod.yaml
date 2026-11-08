@@ -78,8 +78,11 @@ services:
       - "${NGINX_PORT:-80}:80"
     logging: *logging
     depends_on:
+      # Started, not healthy: nginx looks up php-fpm per request, so it can
+      # start first. When a deploy replaces both, Compose stops nginx with
+      # php-fpm, and waiting for a healthy php-fpm keeps it down for ~10 s.
       php-fpm:
-        condition: service_healthy
+        condition: service_started
     # Checks the application through nginx via Laravel's /up endpoint, which
     # covers more than php-fpm's own check of the FPM pool.
     healthcheck:
